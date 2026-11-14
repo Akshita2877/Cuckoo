@@ -40,6 +40,7 @@ scanned docs ──NDI──▶ data/parsed/<doc_id>.json ──┬──▶ Dre
 | `src/run_eval.py` | Runs a model over every parsed doc (resumable) -> `results/drex.jsonl`, `results/llm.jsonl` |
 | `src/score.py` | Flags, thresholds, metrics -> `results/metrics.json` |
 | `src/charts.py` | Budget curve -> `results/charts/budget_curve.png` |
+| `src/app.py` | Demo server: page + live upload analysis (`/api/analyze`) |
 | `demo/index.html`, `demo/top.js` | Demo page, filled from `metrics.json` |
 
 ## Setup
@@ -96,14 +97,15 @@ curl -L -o data/raw/train.parquet https://huggingface.co/datasets/jordyvl/rvl_cd
 .venv/bin/python src/charts.py          # -> results/charts/budget_curve.png
 ```
 
-### Demo page
-
-`demo/index.html` loads `../results/metrics.json` with `fetch`, which browsers block on `file://`.
-Serve the repo root:
+### Demo app
 
 ```bash
-python3 -m http.server 8000     # then open http://localhost:8000/demo/
+.venv/bin/python src/app.py     # then open http://localhost:8000/demo/
 ```
+
+`src/app.py` serves the demo page and a local `/api/analyze` endpoint: upload a PDF or scan and it runs
+NDI -> Drex and the local LLM live, so the API key never reaches the browser. The page also works on any
+static server, but without the app the upload section is disabled.
 
 ## Data contracts
 

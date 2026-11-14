@@ -143,6 +143,33 @@ def main() -> None:
                                   "broken at random)",
                   "cost": "null = price unknown"},
     }
+    # Per-category view and per-document speed, over all docs both models ran on.
+    llm_lab = {d: llm[d]["label"] for d in ids}
+    m["per_class"] = {c: {
+        "n_true": sum(true[d] == c for d in ids),
+        "drex_pred": sum(top[d] == c for d in ids),
+        "llm_pred": sum(llm_lab[d] == c for d in ids),
+        "drex_correct": sum(true[d] == c and top[d] == c for d in ids),
+        "llm_correct": sum(true[d] == c and llm_lab[d] == c for d in ids),
+    } for c in config.CLASSES}
+    m["overall_accuracy"] = {"drex": round(sum(top[d] == true[d] for d in ids) / len(ids), 4),
+                             "llm": round(sum(llm_lab[d] == true[d] for d in ids) / len(ids), 4)}
+    dl = [drex[d]["latency_ms"] for d in ids]
+    ll = [llm[d]["latency_ms"] for d in ids]
+    m["speed"] = {
+        "drex_ms": dl, "llm_ms": ll,
+        "drex_mean_ms": round(statistics.mean(dl)), "llm_mean_ms": round(statistics.mean(ll)),
+        "drex_median_ms": statistics.median(dl), "llm_median_ms": statistics.median(ll),
+        "drex_faster_count": sum(drex[d]["latency_ms"] < llm[d]["latency_ms"] for d in ids),
+        "n": len(ids),
+        # does answer time grow with page length? split at the median Drex input-token count
+        "long_page_tokens": statistics.median(drex[d]["input_tokens"] for d in ids),
+        "short_pages": {"drex_median_ms": statistics.median(drex[d]["latency_ms"] for d in ids if drex[d]["input_tokens"] <= statistics.median(drex[x]["input_tokens"] for x in ids)),
+                        "llm_median_ms": statistics.median(llm[d]["latency_ms"] for d in ids if drex[d]["input_tokens"] <= statistics.median(drex[x]["input_tokens"] for x in ids))},
+        "long_pages": {"drex_median_ms": statistics.median(drex[d]["latency_ms"] for d in ids if drex[d]["input_tokens"] > statistics.median(drex[x]["input_tokens"] for x in ids)),
+                       "llm_median_ms": statistics.median(llm[d]["latency_ms"] for d in ids if drex[d]["input_tokens"] > statistics.median(drex[x]["input_tokens"] for x in ids))},
+        "note": "Drex: hosted API over the network. LLM: llama3.2 on this laptop via Ollama, one request at a time.",
+    }
     m["threshold"] = m["drex"]["threshold"]
     out = res / "metrics.json"
     out.write_text(json.dumps(m, indent=2))

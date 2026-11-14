@@ -40,7 +40,8 @@ async def _req(c: httpx.AsyncClient, method: str, url: str, **kw) -> httpx.Respo
     raise RuntimeError(f"{method} {url} kept failing")
 
 
-async def parse_one(c: httpx.AsyncClient, up_c: httpx.AsyncClient, img: Path) -> dict:
+async def parse_one(c: httpx.AsyncClient, up_c: httpx.AsyncClient, img: Path,
+                    mime: str = "image/png", first_page_only: bool = False) -> dict:
     name = img.name
     g = await _req(c, "POST", f"{BASE}/v1/documents/upload-grants",
                    json={"path": f"cuckoo/{name}", "ttl_seconds": 600})
@@ -49,7 +50,7 @@ async def parse_one(c: httpx.AsyncClient, up_c: httpx.AsyncClient, img: Path) ->
     with img.open("rb") as fh:
         # upload host gets only its one-time token, never the API key
         up = await _req(up_c, "POST", g["upload_url"], headers={"X-Upload-Token": g["token"]},
-                        files={"file": (name, fh, "image/png")},
+                        files={"file": (name, fh, mime)},
                         data={"metadata": json.dumps({"path": f"cuckoo/{name}"})})
     if up.status_code >= 400:
         raise RuntimeError(f"upload {up.status_code}: {up.text[:200]}")
@@ -58,7 +59,8 @@ async def parse_one(c: httpx.AsyncClient, up_c: httpx.AsyncClient, img: Path) ->
                    headers={"Idempotency-Key": f"cuckoo-parse-{img.stem}"},
                    json={"source": {"type": "workspace_file", "workspace_id": g["workspace_id"],
                                     "file_id": file_id},
-                         "output": {"formats": ["text"]}, "parse_mode": "low"})
+                         "output": {"formats": ["text"]}, "parse_mode": "low",
+                         **({"page_ranges": [{"start": 1, "end": 1}]} if first_page_only else {})})
     if r.status_code >= 400:
         raise RuntimeError(f"parse {r.status_code}: {r.text[:200]}")
     job = r.json()
