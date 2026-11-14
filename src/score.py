@@ -82,6 +82,8 @@ def side(name, test, dev, score, flipped, rows, cost_per_doc, top_ok):
         "recall": round(tp / n_pos, 4) if n_pos else None,
         "precision": round(tp / (tp + fp), 4) if tp + fp else None,
         "budget_curve": {str(k): found_at_budget(test, score, flipped, k) for k in BUDGETS},
+        "curve": [found_at_budget(test, score, flipped, k) for k in range(0, min(60, len(test)) + 1)],
+        "n_flagged": tp + fp,
         "latency_p50_ms": pct(lat, 0.50),
         "latency_p95_ms": pct(lat, 0.95),
         "cost_per_1k_docs": None if cost_per_doc is None else round(cost_per_doc * 1000, 6),

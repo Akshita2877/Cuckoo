@@ -4,52 +4,201 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cuckoo: label-error finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root { --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --line:#e6e5e1; --accent:#2a78d6; --card:#ffffff; }
-  @media (prefers-color-scheme: dark) {
-    :root { --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --line:#383835; --accent:#3987e5; --card:#222220; }
+  :root {
+    --bg: #f6f5f2; --surface: #ffffff; --surface-2: #f1f0ec; --line: #e4e2dc;
+    --ink: #121211; --ink-2: #55534e; --ink-3: #8a8780;
+    --drex: #2a78d6; --drex-soft: #e3eefb; --llm: #eb6834; --llm-soft: #fdeae2;
+    --good: #0f8a4a; --good-soft: #e1f4ea; --bad: #c2410c; --bad-soft: #fde9df;
+    --shadow: 0 1px 2px rgba(20,20,15,.05), 0 4px 16px rgba(20,20,15,.05);
+    --radius: 14px;
   }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121211; --surface: #1b1b1a; --surface-2: #242422; --line: #31312e;
+      --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8d86;
+      --drex: #3987e5; --drex-soft: #16263a; --llm: #e8743f; --llm-soft: #3a2116;
+      --good: #34c47a; --good-soft: #12301f; --bad: #f08a5d; --bad-soft: #3a1f14;
+      --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+      --bg: #121211; --surface: #1b1b1a; --surface-2: #242422; --line: #31312e;
+      --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8d86;
+      --drex: #3987e5; --drex-soft: #16263a; --llm: #e8743f; --llm-soft: #3a2116;
+      --good: #34c47a; --good-soft: #12301f; --bad: #f08a5d; --bad-soft: #3a1f14;
+      --shadow: none;
+    }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--surface); color:var(--ink);
-         font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  main { max-width:1100px; margin:0 auto; padding:24px 16px 48px; }
-  h1 { font-size:28px; margin:0 0 4px; }
-  .lede { color:var(--ink2); margin:0 0 24px; max-width:70ch; }
-  h2 { font-size:17px; margin:28px 0 10px; }
-  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; overflow-x:auto; }
-  table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
-  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  th { color:var(--ink2); font-weight:600; font-size:13px; }
-  #totals p { margin:0 0 10px; font-weight:600; }
-  #totals table td:not(:first-child), #totals table th:not(:first-child) { text-align:right; }
-  #flags td:nth-child(4) { text-align:right; }
-  /* probability bars: track and fill use theme tokens */
-  #flags td div[style*="grid"] > div { background:var(--line) !important; }
-  #flags td div[style*="grid"] > div > div { background:var(--accent) !important; }
-  .chart img { width:100%; max-width:900px; height:auto; display:block; }
-  .foot { color:var(--ink2); font-size:13px; margin-top:24px; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+
+  /* header */
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+          background: var(--ink); color: var(--bg); font-size: 22px; }
+  h1 { font-size: 30px; line-height: 1.1; margin: 0; letter-spacing: -.02em; font-weight: 800; }
+  .tag { color: var(--ink-2); margin: 2px 0 0; }
+  .pipeline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
+  .step b { color: var(--ink); font-weight: 600; }
+  .arrow { color: var(--ink-3); }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .headline { padding: 24px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
+  .vs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .big { border-radius: 12px; padding: 16px; }
+  .big.drex { background: var(--drex-soft); }
+  .big.llm { background: var(--surface-2); }
+  .big .who { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .big .num { font-size: 56px; font-weight: 800; letter-spacing: -.03em; line-height: 1; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+  .big .num small { font-size: 20px; font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
+  .big .sub { font-size: 13px; color: var(--ink-2); }
+  .context { padding: 24px; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+  .stat { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px dashed var(--line); padding-bottom: 10px; }
+  .stat:last-child { border-bottom: 0; padding-bottom: 0; }
+  .stat span { color: var(--ink-2); }
+  .stat b { font-size: 22px; font-variant-numeric: tabular-nums; }
+
+  /* comparison */
+  h2 { font-size: 18px; margin: 36px 0 12px; letter-spacing: -.01em; }
+  h2 .hint { font-weight: 400; color: var(--ink-3); font-size: 14px; margin-left: 6px; }
+  #totals { padding: 8px 20px; }
+  .cmp { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .cmp th, .cmp td { padding: 12px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+  .cmp tr:last-child td { border-bottom: 0; }
+  .cmp th { font-size: 12px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .cmp td.metric { color: var(--ink-2); width: 30%; }
+  .cmp td.val { width: 35%; }
+  .cell { display: flex; align-items: center; gap: 10px; }
+  .cell b { min-width: 72px; font-weight: 600; }
+  .track { flex: 1; height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; max-width: 220px; }
+  .fill { height: 100%; border-radius: 99px; }
+  .win { font-size: 11px; font-weight: 600; color: var(--good); background: var(--good-soft); border-radius: 99px; padding: 2px 7px; }
+
+  /* queue */
+  .queue { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  #flags { overflow: hidden; }
+  .row { display: grid; grid-template-columns: 28px 78px minmax(150px, 1.2fr) minmax(90px, .7fr) minmax(120px, 1fr);
+         gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer;
+         transition: background .12s; }
+  .row:last-child { border-bottom: 0; }
+  .row:hover, .row:focus-visible { background: var(--surface-2); outline: none; }
+  .row.active { background: var(--drex-soft); }
+  .row.head { cursor: default; font-size: 12px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding-top: 10px; padding-bottom: 10px; }
+  .row.head:hover { background: transparent; }
+  .rank { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .labels { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+  .chip.given { background: var(--surface-2); color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--ink-3); }
+  .chip.top { background: var(--drex-soft); color: var(--drex); }
+  .score .track { flex: none; width: 100%; max-width: 140px; }
+  .score { display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; }
+  .badge { font-size: 12px; font-weight: 600; border-radius: 8px; padding: 4px 8px; justify-self: start; white-space: nowrap; }
+  .badge.hit { color: var(--good); background: var(--good-soft); }
+  .badge.miss { color: var(--bad); background: var(--bad-soft); }
+
+  /* detail panel */
+  #detail { position: sticky; top: 16px; padding: 18px; min-height: 300px; }
+  #detail .empty { color: var(--ink-3); display: grid; place-items: center; height: 260px; text-align: center; }
+  .dhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .dhead h3 { margin: 0; font-size: 16px; }
+  .scan { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; display: block; max-height: 420px; object-fit: contain; }
+  .probs { display: grid; grid-template-columns: 104px 1fr 44px; gap: 6px 10px; align-items: center; font-size: 13px; margin: 14px 0 6px; }
+  .probs .lab { color: var(--ink-2); }
+  .probs .lab.is-given { color: var(--ink); font-weight: 600; }
+  .probs .pv { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .ptrack { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+  .pfill { height: 100%; background: var(--drex); border-radius: 99px; }
+  .pfill.given { background: var(--ink-3); }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+  pre.ocr { white-space: pre-wrap; font-size: 12px; max-height: 220px; overflow: auto; background: var(--surface-2);
+            border-radius: 8px; padding: 10px; color: var(--ink-2); margin: 8px 0 0; }
+
+  /* chart */
+  #chart { padding: 20px; }
+  #chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .legend { display: flex; gap: 18px; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; padding: 6px 9px;
+         border-radius: 8px; white-space: nowrap; transform: translate(-50%, -120%); opacity: 0; transition: opacity .1s; }
+
+  footer { color: var(--ink-3); font-size: 13px; margin-top: 36px; line-height: 1.6; }
+  .err { padding: 20px; color: var(--bad); }
+
+  @media (max-width: 900px) {
+    .hero, .queue { grid-template-columns: minmax(0, 1fr); }
+    #detail { position: static; }
+  }
+  @media (max-width: 600px) {
+    body { overflow-x: hidden; }
+    .pipeline .arrow { display: none; }
+    .big { padding: 12px; }
+    .big .sub { font-size: 12px; }
+    #totals { padding: 4px 10px; }
+    .cmp th, .cmp td { padding: 10px 4px; }
+    .cmp td.val { width: auto; }
+    .win { display: none; }
+    .big .num { font-size: 38px; }
+    .row { grid-template-columns: 22px minmax(0, 1fr) 70px; }
+    .row { grid-template-columns: 22px minmax(0, 1fr) auto; }
+    .row > :nth-child(2), .row > :nth-child(4) { display: none; }
+    .cmp td.metric { width: auto; }
+    .track { display: none; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>Cuckoo</h1>
-  <p class="lede">NDI parses each scanned document, Drex classifies it <strong>without seeing its label</strong>,
-    and documents where Drex confidently disagrees with the given label are flagged for review.
-    A local open LLM runs the same task as a baseline. All figures below come from <code>results/metrics.json</code>.</p>
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">🥚</div>
+      <div>
+        <h1>Cuckoo</h1>
+        <p class="tag">Finds the mislabeled documents hiding in your dataset.</p>
+      </div>
+    </div>
+    <div class="pipeline" aria-label="Pipeline">
+      <span class="step"><b>Scan</b></span><span class="arrow">→</span>
+      <span class="step"><b>NDI</b> parse</span><span class="arrow">→</span>
+      <span class="step"><b>Drex</b> classifies blind</span><span class="arrow">→</span>
+      <span class="step"><b>Flag</b> confident disagreement</span>
+    </div>
+  </header>
 
-  <h2>Results on the test set</h2>
-  <section id="totals">Loading…</section>
+  <section class="hero">
+    <div class="card headline" id="headline"><p class="eyebrow">Loading results…</p></div>
+    <div class="card context" id="context"></div>
+  </section>
 
-  <h2>Top 20 flags: the review queue</h2>
-  <section id="flags">Loading…</section>
+  <h2>Drex vs. the LLM baseline <span class="hint">test split, threshold tuned on a separate dev split</span></h2>
+  <section class="card" id="totals">Loading…</section>
 
-  <h2>Errors caught per review budget</h2>
-  <section class="chart"><img src="../results/charts/budget_curve.png"
-    alt="Planted label errors found versus number of documents reviewed, Drex versus local LLM baseline"></section>
+  <h2>Review queue <span class="hint">top 20 flags · click one to see the scan</span></h2>
+  <div class="queue">
+    <section class="card" id="flags">Loading…</section>
+    <aside class="card" id="detail"><div class="empty">Select a flag to see the scanned page,<br>Drex's probabilities and the text NDI read.</div></aside>
+  </div>
 
-  <p class="foot">Data: 300 RVL-CDIP scans (50 each of invoice, letter, form, resume, report, memo), 10% of labels
-    deliberately flipped. Flag threshold chosen on a dev split; numbers reported on the held-out test split.</p>
+  <h2>Errors caught per review budget <span class="hint">hover the chart</span></h2>
+  <section class="card" id="chart" style="position:relative">Loading…</section>
+
+  <footer id="foot"></footer>
 </main>
+<script>
+  try { var t = new URLSearchParams(location.search).get("theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
 <script src="top.js"></script>
 </body>
 </html>
