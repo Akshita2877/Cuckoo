@@ -14,7 +14,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-import config  # noqa: E402  (Person B's file)
+try:
+    import config  # noqa: E402  (Person B's file)
+except ModuleNotFoundError:
+    sys.exit("config.py not found in the repo root. It comes from Person B's `data` branch: "
+             "git pull origin main (after B merges), then re-run.")
 
 
 def done_ids(path: Path) -> set[str]:
