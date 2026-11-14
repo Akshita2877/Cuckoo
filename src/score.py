@@ -122,12 +122,17 @@ def main() -> None:
         "n_test": len(test),
         "n_dev": len(dev),
         "n_planted_errors_test": sum(flipped[d] for d in test),
+        "n_planted_errors_total": sum(flipped.values()),
+        "n_planted_errors_dev": sum(flipped[d] for d in dev),
+        "noise_rate": config.NOISE_RATE,
+        "classes": config.CLASSES,
+        "llm_conf_100_count": sum(1 for d in ids if llm[d]["confidence"] == 100),
         "threshold": None,
         "drex": side("drex", test, dev, s_drex, flipped, drex, drex_cost, lambda d: top[d] == true[d]),
         "llm": side("llm", test, dev, s_llm, flipped, llm, llm_cost,
                     lambda d: llm[d]["label"] == true[d]),
         "top_flags": [
-            {"doc_id": d, "given_label": given[d], "drex_top": top[d],
+            {"doc_id": d, "given_label": given[d], "drex_top": top[d], "true_label": true[d],
              "drex_probs": {c: round(drex[d]["probs"][c], 4) for c in config.CLASSES},
              "flag_score": round(s_drex[d], 4), "flipped": flipped[d]}
             for d in sorted(test, key=lambda d: s_drex[d], reverse=True)[:20]],

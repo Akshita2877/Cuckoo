@@ -1,275 +1,336 @@
-// Cuckoo demo: fills the page from ../results/metrics.json. Plain JS, no libraries.
-// All text is inserted with textContent (OCR text is untrusted), never innerHTML.
+// Cuckoo demo: a guided walkthrough built entirely from ../results/metrics.json.
+// Plain JS, no libraries. All text goes in via textContent (OCR text is untrusted).
 (function () {
   "use strict";
   var DASH = "–";
 
   // ---------- helpers ----------
   function isNum(v) { return typeof v === "number" && isFinite(v); }
-  function dash(v) { return v === null || v === undefined || (typeof v === "number" && !isFinite(v)) ? DASH : v; }
-  function num(v, d) { return isNum(v) ? (d === undefined ? String(v) : v.toFixed(d)) : DASH; }
-  function pct(v) { return isNum(v) ? Math.round(v * 100) + "%" : DASH; }
+  function d(v) { return v === null || v === undefined || (typeof v === "number" && !isFinite(v)) ? DASH : String(v); }
+  function pct(v, dp) { return isNum(v) ? (v * 100).toFixed(dp || 0) + "%" : DASH; }
   function ms(v) { return isNum(v) ? Math.round(v) + " ms" : DASH; }
-  function usd(v) {
-    if (!isNum(v)) return DASH;
-    if (v === 0) return "$0";
-    return "$" + (Math.abs(v) < 0.01 ? Number(v.toPrecision(2)).toString() : v.toFixed(2));
-  }
+  function n1(v) { return isNum(v) ? String(+v.toFixed(1)) : DASH; }
+  function get(o, k) { return o && o[k] !== undefined ? o[k] : null; }
+  function $(id) { return document.getElementById(id); }
+  function clear(b) { while (b.firstChild) b.removeChild(b.firstChild); return b; }
   function el(tag, attrs, kids) {
     var e = document.createElement(tag);
-    if (attrs) for (var k in attrs) {
+    for (var k in attrs || {}) {
       if (k === "text") e.textContent = attrs[k];
-      else if (k === "style") e.style.cssText = attrs[k];
       else if (k === "class") e.className = attrs[k];
+      else if (k === "style") e.style.cssText = attrs[k];
       else e.setAttribute(k, attrs[k]);
     }
-    (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+    (kids || []).forEach(function (c) { if (c !== null && c !== undefined) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
     return e;
+  }
+  // Rich sentence: parts are strings or ["b", text] / ["drex"|"llm"|"good"|"bad", text]
+  function say(tag, parts, attrs) {
+    return el(tag, attrs, parts.map(function (p) {
+      if (typeof p === "string") return p;
+      var style = { drex: "color:var(--drex)", llm: "color:var(--llm)", good: "color:var(--good)", bad: "color:var(--bad)" }[p[0]];
+      return el("b", style ? { style: style, text: p[1] } : { text: p[1] });
+    }));
   }
   function svg(tag, attrs) {
     var e = document.createElementNS("http://www.w3.org/2000/svg", tag);
     for (var k in attrs || {}) e.setAttribute(k, attrs[k]);
     return e;
   }
-  function get(o, k) { return o && o[k] !== undefined ? o[k] : null; }
-  function box(id) { return document.getElementById(id); }
-  function clear(b) { while (b.firstChild) b.removeChild(b.firstChild); }
-
-  // ---------- headline ----------
-  function renderHeadline(m) {
-    var b = box("headline"); if (!b) return; clear(b);
-    var k = "20", n = m.n_planted_errors_test;
-    function big(cls, color, who, v) {
-      return el("div", { "class": "big " + cls }, [
-        el("div", { "class": "who" }, [el("span", { "class": "dot", style: "background:" + color }), el("span", { text: who })]),
-        el("div", { "class": "num" }, [document.createTextNode(isNum(v) ? String(+v.toFixed(1)) : DASH),
-                                     el("small", { text: isNum(n) ? " / " + n : "" })]),
-        el("div", { "class": "sub", text: "real errors in the first 20 docs reviewed" })
-      ]);
-    }
-    b.appendChild(el("p", { "class": "eyebrow", text: "If a reviewer checks only the top 20 flags" }));
-    b.appendChild(el("div", { "class": "vs" }, [
-      big("drex", "var(--drex)", "Drex", get(get(get(m, "drex"), "budget_curve"), k)),
-      big("llm", "var(--llm)", "Local LLM baseline", get(get(get(m, "llm"), "budget_curve"), k))
-    ]));
-  }
-
-  function renderContext(m) {
-    var b = box("context"); if (!b) return; clear(b);
-    [["Documents in dataset", dash(m.n_docs)],
-     ["Held-out test documents", dash(m.n_test)],
-     ["Planted label errors in test", dash(m.n_planted_errors_test)],
-     ["Drex precision on flags", pct(get(m.drex, "precision"))]
-    ].forEach(function (s) {
-      b.appendChild(el("div", { "class": "stat" }, [el("span", { text: s[0] }), el("b", { text: String(s[1]) })]));
+  function probBars(probs, filed) {
+    var g = el("div", { "class": "probs" });
+    Object.keys(probs || {}).sort(function (a, b) { return (probs[b] || 0) - (probs[a] || 0); }).forEach(function (c) {
+      var p = probs[c], f = c === filed;
+      g.appendChild(el("span", { "class": "lab" + (f ? " filed" : ""), text: c + (f ? " (filed)" : "") }));
+      g.appendChild(el("div", { "class": "ptrack" }, [el("div", { "class": "pfill" + (f ? " filed" : ""),
+        style: "width:" + (isNum(p) ? Math.max(0, Math.min(1, p)) * 100 : 0).toFixed(1) + "%" })]));
+      g.appendChild(el("span", { "class": "pv", text: isNum(p) ? (p * 100).toFixed(p < 0.1 ? 1 : 0) + "%" : DASH }));
     });
+    return g;
   }
-
-  // ---------- comparison ----------
-  function renderTotals(m) {
-    var b = box("totals"); if (!b) return; clear(b);
-    var n = m.n_planted_errors_test;
-    // [label, key, formatter, higherIsBetter, scaleMax]
-    var rows = [
-      ["Planted errors flagged", "errors_found", function (v) { return isNum(v) ? v + (isNum(n) ? " / " + n : "") : DASH; }, true, n],
-      ["False alarms", "false_alarms", function (v) { return dash(v); }, false],
-      ["Precision", "precision", pct, true, 1],
-      ["Recall", "recall", pct, true, 1],
-      ["Median latency", "latency_p50_ms", ms, false],
-      ["95th percentile latency", "latency_p95_ms", ms, false],
-      ["Cost per 1,000 docs", "cost_per_1k_docs", usd, null]
-    ];
-    var head = el("tr", null, [el("th", { text: "" }),
-      el("th", null, [el("span", { "class": "dot", style: "background:var(--drex);margin-right:6px" }), document.createTextNode("Drex")]),
-      el("th", null, [el("span", { "class": "dot", style: "background:var(--llm);margin-right:6px" }), document.createTextNode("Local LLM")])]);
-    var body = rows.map(function (r) {
-      var a = get(m.drex, r[1]), c = get(m.llm, r[1]);
-      var max = r[4] || Math.max(isNum(a) ? a : 0, isNum(c) ? c : 0) || 1;
-      var better = (r[3] === null || !isNum(a) || !isNum(c) || a === c) ? null : ((a > c) === r[3] ? "a" : "c");
-      function cell(v, color, wins) {
-        var kids = [el("b", { text: String(r[2](v)) })];
-        if (r[1] !== "cost_per_1k_docs" && isNum(v)) {
-          kids.push(el("div", { "class": "track" }, [el("div", { "class": "fill",
-            style: "width:" + Math.max(2, Math.min(100, v / max * 100)).toFixed(1) + "%;background:" + color })]));
-        }
-        if (wins) kids.push(el("span", { "class": "win", text: "better" }));
-        return el("td", { "class": "val" }, [el("div", { "class": "cell" }, kids)]);
-      }
-      return el("tr", null, [el("td", { "class": "metric", text: r[0] }),
-        cell(a, "var(--drex)", better === "a"), cell(c, "var(--llm)", better === "c")]);
-    });
-    b.appendChild(el("table", { "class": "cmp" }, [el("thead", null, [head]), el("tbody", null, body)]));
-    if (!isNum(get(m.drex, "cost_per_1k_docs"))) {
-      b.appendChild(el("p", { style: "font-size:12px;color:var(--ink-3);margin:6px 8px 10px",
-        text: "Drex cost not shown: the per-token price isn't set in config.py." }));
-    }
-  }
-
-  // ---------- review queue ----------
-  var CLASSES_ORDER = null;
-
-  function renderFlags(m) {
-    var b = box("flags"); if (!b) return; clear(b);
-    var flags = (m.top_flags || []).slice(0, 20);
-    b.appendChild(el("div", { "class": "row head", role: "row" }, ["#", "Doc", "Filed as → Drex says", "Flag score", "Result"].map(function (h) {
-      return el("div", { text: h });
-    })));
-    flags.forEach(function (f, i) {
-      f = f || {};
-      var score = isNum(f.flag_score) ? f.flag_score : null;
-      var badge = f.flipped === true ? el("span", { "class": "badge hit", text: "✓ Planted error" })
-                : f.flipped === false ? el("span", { "class": "badge miss", text: "False alarm" })
-                : el("span", { text: DASH });
-      var row = el("div", { "class": "row", tabindex: "0", role: "button",
-                            "aria-label": "Flag " + (i + 1) + ": " + dash(f.doc_id) }, [
-        el("div", { "class": "rank", text: String(i + 1) }),
-        el("div", { "class": "mono", style: "font-size:13px", text: String(dash(f.doc_id)) }),
-        el("div", { "class": "labels" }, [
-          el("span", { "class": "chip given", text: String(dash(f.given_label)) }),
-          el("span", { style: "color:var(--ink-3)", text: "→" }),
-          el("span", { "class": "chip top", text: String(dash(f.drex_top)) })
-        ]),
-        el("div", { "class": "score" }, [
-          el("span", { text: num(score, 3) }),
-          el("div", { "class": "track", style: "max-width:none" }, [el("div", { "class": "fill",
-            style: "width:" + (score === null ? 0 : (score * 100).toFixed(1)) + "%;background:var(--drex)" })])
-        ]),
-        badge
-      ]);
-      function open() {
-        Array.prototype.forEach.call(b.querySelectorAll(".row.active"), function (r) { r.classList.remove("active"); });
-        row.classList.add("active");
-        showDetail(f);
-      }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
-      b.appendChild(row);
-      if (i === 0) setTimeout(open, 0);  // pre-select the top flag for the demo
-    });
-    if (!flags.length) b.appendChild(el("p", { style: "padding:16px", text: "No flags." }));
-  }
-
-  function showDetail(f) {
-    var b = box("detail"); if (!b) return; clear(b);
-    var id = String(dash(f.doc_id));
-    b.appendChild(el("div", { "class": "dhead" }, [
-      el("h3", { "class": "mono", text: id }),
-      f.flipped === true ? el("span", { "class": "badge hit", text: "✓ Planted error" })
-        : f.flipped === false ? el("span", { "class": "badge miss", text: "False alarm" }) : null
-    ]));
-    b.appendChild(el("p", { style: "margin:0 0 12px;color:var(--ink-2);font-size:14px" }, [
-      document.createTextNode("Filed as "), el("b", { text: String(dash(f.given_label)) }),
-      document.createTextNode(", Drex says "), el("b", { style: "color:var(--drex)", text: String(dash(f.drex_top)) }),
-      document.createTextNode(".")
-    ]));
-
-    var img = el("img", { "class": "scan", alt: "Scanned page " + id, loading: "lazy",
-                          src: "../data/raw/scans/" + encodeURIComponent(id) + ".png" });
+  function scanImg(id, cls) {
+    var img = el("img", { "class": cls || "scan", alt: "Scanned page " + id, src: "../data/raw/scans/" + encodeURIComponent(id) + ".png" });
     img.addEventListener("error", function () {
-      img.replaceWith(el("div", { style: "font-size:13px;color:var(--ink-3);padding:12px;background:var(--surface-2);border-radius:8px",
-        text: "Scan image not available here (data/raw is local only). Run src/make_noise.py to rebuild it." }));
+      img.replaceWith(el("div", { "class": "note", style: "margin:0",
+        text: "Scan image not available here (data/raw is local only; rebuild it with src/make_noise.py)." }));
     });
-    b.appendChild(img);
-
-    var probs = f.drex_probs;
-    if (probs && typeof probs === "object") {
-      var grid = el("div", { "class": "probs" });
-      Object.keys(probs).sort(function (x, y) { return (probs[y] || 0) - (probs[x] || 0); }).forEach(function (c) {
-        var p = probs[c], isGiven = c === f.given_label;
-        grid.appendChild(el("span", { "class": "lab" + (isGiven ? " is-given" : ""), text: c + (isGiven ? " (filed)" : "") }));
-        grid.appendChild(el("div", { "class": "ptrack" }, [el("div", { "class": "pfill" + (isGiven ? " given" : ""),
-          style: "width:" + (isNum(p) ? Math.max(0, Math.min(1, p)) * 100 : 0).toFixed(1) + "%" })]));
-        grid.appendChild(el("span", { "class": "pv", text: isNum(p) ? (p * 100).toFixed(p < 0.1 ? 1 : 0) + "%" : DASH }));
-      });
-      b.appendChild(el("p", { "class": "eyebrow", style: "margin:16px 0 0", text: "Drex probabilities (label never shown to Drex)" }));
-      b.appendChild(grid);
-    }
-
-    var det = el("details", null, [el("summary", { text: "Text NDI read from the scan" })]);
-    var pre = el("pre", { "class": "ocr", text: "Loading…" });
-    det.appendChild(pre);
-    b.appendChild(det);
+    return img;
+  }
+  function ocrInto(pre, id) {
     fetch("../data/parsed/" + encodeURIComponent(id) + ".json")
       .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
-      .then(function (d) { pre.textContent = (d && d.text) ? d.text.slice(0, 4000) : "(no text)"; })
+      .then(function (x) { pre.textContent = (x && x.text) ? x.text.replace(/^--- Page 1 ---\n/, "").slice(0, 3000) : "(no text)"; })
       .catch(function () { pre.textContent = "Parsed text not available."; });
   }
+  function verdict(f) {
+    if (f.flipped === true) return el("div", { "class": "verdict hit", text: "✓ Planted error: it really is a " + d(f.true_label || f.drex_top) + "." });
+    if (f.flipped === false) return el("div", { "class": "verdict miss", text: "✗ False alarm: it really is a " + d(f.true_label || f.given_label) + ", so the label was right." });
+    return null;
+  }
 
-  // ---------- chart ----------
-  function renderChart(m) {
-    var b = box("chart"); if (!b) return; clear(b);
-    var d = get(m.drex, "curve"), l = get(m.llm, "curve"), n = m.n_planted_errors_test;
-    if (!Array.isArray(d) || !Array.isArray(l)) {
+  // ---------- 0. hero ----------
+  function hero(m) {
+    var D = m.drex || {}, L = m.llm || {}, E = m.n_planted_errors_test;
+    clear($("answer")).appendChild(say("span", [
+      "Yes, mostly. We hid ", ["b", d(E) + " wrong labels"], " among ", ["b", d(m.n_test) + " test documents"], ". ",
+      ["drex", "Drex"], " raised ", ["b", d(D.n_flagged) + " flags"], " and ", ["b", d(D.errors_found)], " of them were real errors. ",
+      "A local LLM baseline needed ", ["b", d(L.n_flagged) + " flags"], " to find ", ["b", d(L.errors_found)], ", so a reviewer would wade through ",
+      ["b", d(L.false_alarms) + " false alarms"], " instead of ", ["b", d(D.false_alarms)], "."
+    ]));
+    var k = clear($("kpis"));
+    [[d(D.errors_found), "/ " + d(E), "hidden errors Drex found"],
+     [pct(D.precision), "", "of Drex's flags were real errors (baseline: " + pct(L.precision) + ")"],
+     [n1(get(D.budget_curve, "20")), "vs " + n1(get(L.budget_curve, "20")), "real errors in the top 20 flags, Drex vs baseline"],
+     [ms(D.latency_p50_ms), "", "median time per document for Drex (baseline: " + ms(L.latency_p50_ms) + ")"]
+    ].forEach(function (x) {
+      k.appendChild(el("div", { "class": "kpi" }, [el("div", { "class": "v" }, [x[0], x[1] ? el("small", { text: " " + x[1] }) : null]),
+                                                el("div", { "class": "l", text: x[2] })]));
+    });
+  }
+
+  // ---------- 2. setup ----------
+  function setup(m) {
+    var classes = m.classes || [], per = isNum(m.n_docs) && classes.length ? m.n_docs / classes.length : null;
+    clear($("setup-lead")).appendChild(say("span", [
+      "We took ", ["b", d(m.n_docs) + " real scanned documents"], " from the public RVL-CDIP dataset (", d(per), " each of ",
+      classes.join(", ") + "). Then we secretly changed ", ["b", d(m.n_planted_errors_total) + " labels"], " (",
+      pct(m.noise_rate) + ") to a wrong class. Because we planted them, we know exactly which labels are wrong, so we can score anyone who tries to find them."
+    ]));
+    var f = clear($("flow"));
+    f.appendChild(el("div", { "class": "fbox" }, [el("div", { "class": "big", text: d(m.n_docs) }),
+      el("p", { text: "real scanned pages, " + classes.length + " document types" })]));
+    f.appendChild(el("div", { "class": "farrow", text: "→" }));
+    f.appendChild(el("div", { "class": "fbox" }, [el("div", { "class": "big", style: "color:var(--bad)", text: d(m.n_planted_errors_total) }),
+      el("p", { text: "labels flipped to a random wrong class (fixed seed, so it's reproducible)" })]));
+    f.appendChild(el("div", { "class": "farrow", text: "→" }));
+    f.appendChild(el("div", { "class": "fbox" }, [el("p", { text: "Split into two groups:" }),
+      el("div", { "class": "split" }, [
+        el("div", { "class": "dev" }, [el("b", { text: d(m.n_dev) + " dev" }), d(m.n_planted_errors_dev) + " errors · used only to choose the flag threshold"]),
+        el("div", { "class": "test" }, [el("b", { text: d(m.n_test) + " test" }), d(m.n_planted_errors_test) + " errors · never used for tuning; every number on this page comes from here"])
+      ])]));
+  }
+
+  // ---------- 3. one document ----------
+  function example(m) {
+    var flags = m.top_flags || [], f = flags.filter(function (x) { return x && x.flipped; })[0] || flags[0];
+    var w = clear($("walk"));
+    if (!f) { w.appendChild(el("p", { text: "No flags to show." })); return; }
+    var pf = get(f.drex_probs, f.given_label), pt = get(f.drex_probs, f.drex_top);
+    clear($("example-lead")).appendChild(say("span", ["This is Drex's most suspicious test document, ",
+      ["b", d(f.doc_id)], ", from scanned page to flag. It is filed as a ", ["b", d(f.given_label)], "."]));
+    function step(n, title, kids) {
+      return el("div", { "class": "wstep" }, [el("div", { "class": "wt" }, [el("span", { text: n }), title])].concat(kids));
+    }
+    var pre = el("pre", { "class": "ocr", text: "Loading…" });
+    ocrInto(pre, f.doc_id);
+    w.appendChild(step("1", "The scan", [scanImg(f.doc_id),
+      say("p", ["The page as it sits in the dataset, filed as ", ["b", d(f.given_label)], "."])]));
+    w.appendChild(step("2", "NDI reads it", [pre,
+      say("p", ["NDI turns the scan into text. ", ["b", "Only this text"], " goes to Drex; the label does not."])]));
+    w.appendChild(step("3", "Drex answers", [probBars(f.drex_probs, f.given_label),
+      say("p", ["Asked “What type of document is this?”, Drex puts ", ["drex", pct(pt, 1)], " on ", ["b", d(f.drex_top)],
+        " and only ", ["b", pct(pf, 1)], " on ", ["b", d(f.given_label)], "."])]));
+    w.appendChild(step("4", "The check", [
+      el("div", { "class": "calc" }, [
+        say("div", ["flag score = 1 − P(", ["b", d(f.given_label)], ")"]),
+        say("div", ["= 1 − " + (isNum(pf) ? pf.toFixed(4) : DASH) + " = ", ["b", isNum(f.flag_score) ? f.flag_score.toFixed(4) : DASH]]),
+        say("div", ["threshold ", ["b", d(m.threshold)], " → ", ["drex", isNum(f.flag_score) && isNum(m.threshold) && f.flag_score >= m.threshold ? "FLAGGED" : "not flagged"]])
+      ]),
+      verdict(f)]));
+  }
+
+  // ---------- 4. results ----------
+  function results(m) {
+    var E = m.n_planted_errors_test;
+    clear($("results-lead")).appendChild(say("span", ["Each square is one flag a model raised on the ", ["b", d(m.n_test) + " test documents"],
+      ". ", ["good", "Green"], " = a real planted error. ", ["bad", "Red"], " = a false alarm (the label was fine). A dashed square is a hidden error it missed."]));
+    var duo = clear($("duo"));
+    [["drex", "Drex", "var(--drex)"], ["llm", "Local LLM baseline (llama3.2)", "var(--llm)"]].forEach(function (s) {
+      var M = m[s[0]] || {}, tp = M.errors_found, fp = M.false_alarms, nf = M.n_flagged;
+      var waffle = el("div", { "class": "waffle", "aria-label": d(tp) + " real errors, " + d(fp) + " false alarms, " + (isNum(E) && isNum(tp) ? E - tp : DASH) + " missed" });
+      var i;
+      for (i = 0; i < (tp || 0); i++) waffle.appendChild(el("i", { "class": "hit" }));
+      for (i = 0; i < (fp || 0); i++) waffle.appendChild(el("i", { "class": "fa" }));
+      for (i = 0; i < (isNum(E) && isNum(tp) ? E - tp : 0); i++) waffle.appendChild(el("i", { "class": "missed" }));
+      var ratio = isNum(nf) && isNum(tp) && tp > 0 ? nf / tp : null;
+      var facts = el("ul", { "class": "facts" }, [
+        say("li", ["Caught ", ["b", d(tp) + " of " + d(E)], " hidden errors (recall ", ["b", pct(M.recall)], ")."], { "class": "good" }),
+        say("li", [["b", pct(M.precision)], " of its ", d(nf), " flags were real; ", ["b", d(fp) + " were false alarms"],
+          ratio ? ". A reviewer checks about " + ratio.toFixed(1) + " documents per real error found." : "."],
+          { "class": isNum(M.precision) && M.precision >= 0.5 ? "good" : "bad" }),
+        say("li", ["It labels ", ["b", pct(M.accuracy_vs_true, 1)], " of test pages correctly, with a median of ", ["b", ms(M.latency_p50_ms)], " per document."])
+      ]);
+      duo.appendChild(el("div", { "class": "card side" }, [
+        el("h3", null, [el("span", { "class": "dot", style: "background:" + s[2] }), s[1]]),
+        el("p", { "class": "sub", text: d(nf) + " flags raised (threshold " + d(M.threshold) + ", chosen on dev)" }),
+        waffle,
+        el("div", { "class": "wlegend" }, [
+          el("span", null, [el("i", { style: "background:var(--good)" }), "real error (" + d(tp) + ")"]),
+          el("span", null, [el("i", { style: "background:var(--bad)" }), "false alarm (" + d(fp) + ")"]),
+          el("span", null, [el("i", { style: "border:2px dashed var(--miss)" }), "missed (" + (isNum(E) && isNum(tp) ? E - tp : DASH) + ")"])
+        ]),
+        facts
+      ]));
+    });
+    var D = m.drex || {}, L = m.llm || {};
+    var x = isNum(L.n_flagged) && isNum(D.n_flagged) && D.n_flagged ? (L.n_flagged / D.n_flagged).toFixed(1) : null;
+    clear($("bottomline")).appendChild(say("p", [["b", "Bottom line: "], "both models find most of the hidden errors (",
+      ["drex", "Drex " + d(D.errors_found) + "/" + d(E)], ", ", ["llm", "baseline " + d(L.errors_found) + "/" + d(E)],
+      "). The difference is the reviewer's time: the baseline asks them to check ", ["b", d(L.n_flagged) + " documents"],
+      ", Drex asks for ", ["b", d(D.n_flagged)], x ? ", " + x + "× fewer, while finding more." : "."], { style: "margin:0" }));
+  }
+
+  // ---------- 5. budget ----------
+  function budget(m) {
+    var D = m.drex || {}, L = m.llm || {};
+    clear($("budget-lead")).appendChild(say("span", ["Sort the documents by flag score and check them from the top. After K documents, how many hidden errors have you found? ",
+      "With time for 20: ", ["drex", "Drex " + n1(get(D.budget_curve, "20"))], " vs ", ["llm", "baseline " + n1(get(L.budget_curve, "20"))], "."]));
+    var w = clear($("why-llm"));
+    w.appendChild(el("h4", { text: "Why is the baseline's line almost straight?" }));
+    w.appendChild(say("p", ["It said it was ", ["b", "100% confident on " + d(m.llm_conf_100_count) + " of " + d(m.n_docs)],
+      " documents. When nearly every answer is “100% sure”, its flags can't be put in a useful order, so its top 20 is close to a random 20 of its flags."]));
+    w.appendChild(say("p", [["drex", "Drex"], " returns a probability for every class, so its scores spread out and the clearest mistakes rise to the top: ",
+      ["b", n1(get(D.budget_curve, "5")) + " of its top 5"], " and ", ["b", n1(get(D.budget_curve, "10")) + " of its top 10"], " are real errors."]));
+    w.appendChild(el("p", { style: "font-size:12px;color:var(--ink-3);margin:0", text: "Tied scores are counted as if broken at random (expected value), which is why the baseline can show fractions." }));
+    chart(m);
+  }
+
+  function chart(m) {
+    var b = clear($("chart")), D = get(m.drex, "curve"), L = get(m.llm, "curve"), n = m.n_planted_errors_test;
+    if (!Array.isArray(D) || !Array.isArray(L)) {
       b.appendChild(el("img", { src: "../results/charts/budget_curve.png", alt: "Budget curve", style: "width:100%" }));
       return;
     }
     b.appendChild(el("div", { "class": "legend" }, [
-      el("span", null, [el("span", { "class": "dot", style: "background:var(--drex)" }), document.createTextNode("Drex")]),
-      el("span", null, [el("span", { "class": "dot", style: "background:var(--llm)" }), document.createTextNode("Local LLM baseline")]),
-      el("span", null, [el("span", { style: "width:14px;border-top:1.5px dashed var(--ink-3);display:inline-block" }),
-                        document.createTextNode((isNum(n) ? n : "") + " planted errors")])
+      el("span", null, [el("span", { "class": "dot", style: "background:var(--drex)" }), "Drex"]),
+      el("span", null, [el("span", { "class": "dot", style: "background:var(--llm)" }), "Local LLM baseline"]),
+      el("span", null, [el("span", { style: "width:14px;border-top:1.5px dashed var(--ink-3);display:inline-block" }), d(n) + " hidden errors in test"])
     ]));
-    var W = 900, H = 320, P = { l: 44, r: 70, t: 14, b: 40 };
-    var kMax = Math.max(d.length, l.length) - 1, yMax = Math.max(isNum(n) ? n : 0, d[kMax] || 0) + 2;
+    var W = 760, H = 330, P = { l: 40, r: 64, t: 14, b: 44 };
+    var kMax = Math.max(D.length, L.length) - 1, yMax = Math.max(isNum(n) ? n : 0, D[kMax] || 0) + 2;
     function X(k) { return P.l + k / kMax * (W - P.l - P.r); }
     function Y(v) { return H - P.b - v / yMax * (H - P.t - P.b); }
-    var s = svg("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
-      "aria-label": "Planted errors found versus documents reviewed, Drex versus local LLM" });
+    var s = svg("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Hidden errors found versus documents checked, Drex versus baseline" });
     for (var g = 0; g <= yMax; g += 5) {
-      s.appendChild(svg("line", { x1: P.l, x2: W - P.r, y1: Y(g), y2: Y(g), stroke: "var(--line)", "stroke-width": 1 }));
-      var t = svg("text", { x: P.l - 8, y: Y(g) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--ink-3)" });
-      t.textContent = g; s.appendChild(t);
+      s.appendChild(svg("line", { x1: P.l, x2: W - P.r, y1: Y(g), y2: Y(g), stroke: "var(--line)" }));
+      var t = svg("text", { x: P.l - 8, y: Y(g) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--ink-3)" }); t.textContent = g; s.appendChild(t);
     }
     for (var k = 0; k <= kMax; k += 10) {
-      var tx = svg("text", { x: X(k), y: H - P.b + 18, "text-anchor": "middle", "font-size": 11, fill: "var(--ink-3)" });
-      tx.textContent = k; s.appendChild(tx);
+      var tx = svg("text", { x: X(k), y: H - P.b + 18, "text-anchor": "middle", "font-size": 11, fill: "var(--ink-3)" }); tx.textContent = k; s.appendChild(tx);
     }
-    var xl = svg("text", { x: (P.l + W - P.r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 12, fill: "var(--ink-2)" });
-    xl.textContent = "Documents reviewed, highest flag score first"; s.appendChild(xl);
-    if (isNum(n)) s.appendChild(svg("line", { x1: P.l, x2: W - P.r, y1: Y(n), y2: Y(n), stroke: "var(--ink-3)",
-      "stroke-dasharray": "5 4", "stroke-width": 1.2 }));
-    function path(arr) { return arr.map(function (v, i) { return (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); }).join(" "); }
-    [[l, "var(--llm)", "Local LLM"], [d, "var(--drex)", "Drex"]].forEach(function (sr) {
-      s.appendChild(svg("path", { d: path(sr[0]), fill: "none", stroke: sr[1], "stroke-width": 2.5,
-        "stroke-linejoin": "round", "stroke-linecap": "round" }));
-      var last = sr[0].length - 1, lab = svg("text", { x: X(last) + 8, y: Y(sr[0][last]) + 4, "font-size": 12,
-        "font-weight": 600, fill: "var(--ink)" });
-      lab.textContent = sr[2] + " " + (+sr[0][last].toFixed(1));
-      s.appendChild(lab);
+    var xl = svg("text", { x: (P.l + W - P.r) / 2, y: H - 6, "text-anchor": "middle", "font-size": 12, fill: "var(--ink-2)" });
+    xl.textContent = "Documents checked, most suspicious first"; s.appendChild(xl);
+    if (isNum(n)) s.appendChild(svg("line", { x1: P.l, x2: W - P.r, y1: Y(n), y2: Y(n), stroke: "var(--ink-3)", "stroke-dasharray": "5 4" }));
+    s.appendChild(svg("line", { x1: X(20), x2: X(20), y1: P.t, y2: H - P.b, stroke: "var(--ink-3)", "stroke-width": 1, opacity: .35 }));
+    var lb = svg("text", { x: X(20) + 4, y: P.t + 10, "font-size": 11, fill: "var(--ink-3)" }); lb.textContent = "budget of 20"; s.appendChild(lb);
+    function path(a) { return a.map(function (v, i) { return (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); }).join(" "); }
+    [[L, "var(--llm)", "Baseline"], [D, "var(--drex)", "Drex"]].forEach(function (sr) {
+      s.appendChild(svg("path", { d: path(sr[0]), fill: "none", stroke: sr[1], "stroke-width": 2.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      var last = sr[0].length - 1, lab = svg("text", { x: X(last) + 6, y: Y(sr[0][last]) + 4, "font-size": 12, "font-weight": 600, fill: "var(--ink)" });
+      lab.textContent = n1(sr[0][last]); s.appendChild(lab);
     });
-    var cross = svg("line", { y1: P.t, y2: H - P.b, stroke: "var(--ink-3)", "stroke-width": 1, opacity: 0 });
+    var cross = svg("line", { y1: P.t, y2: H - P.b, stroke: "var(--ink-3)", opacity: 0 });
     var md = svg("circle", { r: 5, fill: "var(--drex)", stroke: "var(--surface)", "stroke-width": 2, opacity: 0 });
     var ml = svg("circle", { r: 5, fill: "var(--llm)", stroke: "var(--surface)", "stroke-width": 2, opacity: 0 });
     s.appendChild(cross); s.appendChild(ml); s.appendChild(md);
     var hit = svg("rect", { x: P.l, y: P.t, width: W - P.l - P.r, height: H - P.t - P.b, fill: "transparent" });
-    s.appendChild(hit);
-    b.appendChild(s);
-    var tip = el("div", { "class": "tip" });
-    b.appendChild(tip);
-    function move(ev) {
-      var r = s.getBoundingClientRect(), sx = (ev.clientX - r.left) / r.width * W;
-      var k = Math.max(0, Math.min(kMax, Math.round((sx - P.l) / (W - P.l - P.r) * kMax)));
+    s.appendChild(hit); b.appendChild(s);
+    var tip = el("div", { "class": "tip" }); b.appendChild(tip);
+    hit.addEventListener("mousemove", function (ev) {
+      var r = s.getBoundingClientRect(), br = b.getBoundingClientRect();
+      var k = Math.max(0, Math.min(kMax, Math.round(((ev.clientX - r.left) / r.width * W - P.l) / (W - P.l - P.r) * kMax)));
       [cross, md, ml].forEach(function (e) { e.setAttribute("opacity", 1); });
       cross.setAttribute("x1", X(k)); cross.setAttribute("x2", X(k));
-      md.setAttribute("cx", X(k)); md.setAttribute("cy", Y(d[k]));
-      ml.setAttribute("cx", X(k)); ml.setAttribute("cy", Y(l[k]));
-      tip.textContent = "Top " + k + ": Drex " + (+d[k].toFixed(1)) + " · LLM " + (+l[k].toFixed(1));
-      tip.style.left = (X(k) / W * r.width + (r.left - b.getBoundingClientRect().left)) + "px";
-      tip.style.top = (Y(Math.max(d[k], l[k])) / H * r.height + (r.top - b.getBoundingClientRect().top)) + "px";
+      md.setAttribute("cx", X(k)); md.setAttribute("cy", Y(D[k])); ml.setAttribute("cx", X(k)); ml.setAttribute("cy", Y(L[k]));
+      tip.textContent = "After " + k + " checked: Drex " + n1(D[k]) + " · baseline " + n1(L[k]);
+      tip.style.left = (X(k) / W * r.width + r.left - br.left) + "px";
+      tip.style.top = (Y(Math.max(D[k], L[k])) / H * r.height + r.top - br.top) + "px";
       tip.style.opacity = 1;
-    }
-    hit.addEventListener("mousemove", move);
-    hit.addEventListener("mouseleave", function () {
-      [cross, md, ml].forEach(function (e) { e.setAttribute("opacity", 0); }); tip.style.opacity = 0;
     });
+    hit.addEventListener("mouseleave", function () { [cross, md, ml].forEach(function (e) { e.setAttribute("opacity", 0); }); tip.style.opacity = 0; });
   }
 
-  function renderFoot(m) {
-    var b = box("foot"); if (!b) return;
-    b.textContent = "Data: " + dash(m.n_docs) + " RVL-CDIP scans (invoice, letter, form, resume, report, memo), 10% of labels " +
-      "deliberately flipped. Drex flag score = 1 − P(filed label); flag threshold " + num(m.threshold, 2) +
-      " chosen on a " + dash(m.n_dev) + "-doc dev split, results on the " + dash(m.n_test) + "-doc test split. " +
-      "Top-K counts break score ties at random. All figures are read live from results/metrics.json.";
+  // ---------- 6. queue ----------
+  function queue(m) {
+    var b = clear($("flags")), flags = (m.top_flags || []).slice(0, 20);
+    b.appendChild(el("div", { "class": "row head" }, ["#", "Doc", "Filed as → Drex says", "Score", "Truth"].map(function (h) { return el("div", { text: h }); })));
+    flags.forEach(function (f, i) {
+      f = f || {};
+      var row = el("div", { "class": "row", tabindex: "0", role: "button", "aria-label": "Flag " + (i + 1) + ", " + d(f.doc_id) }, [
+        el("div", { "class": "rank", text: String(i + 1) }),
+        el("div", { "class": "mono", style: "font-size:13px", text: d(f.doc_id) }),
+        el("div", { "class": "labels" }, [el("span", { "class": "chip given", text: d(f.given_label) }),
+          el("span", { style: "color:var(--ink-3)", text: "→" }), el("span", { "class": "chip top", text: d(f.drex_top) })]),
+        el("div", { style: "font-variant-numeric:tabular-nums;font-size:13px", text: isNum(f.flag_score) ? f.flag_score.toFixed(3) : DASH }),
+        f.flipped === true ? el("span", { "class": "badge hit", text: "✓ Planted error" })
+          : f.flipped === false ? el("span", { "class": "badge miss", text: "False alarm" }) : el("span", { text: DASH })
+      ]);
+      function open() {
+        Array.prototype.forEach.call(b.querySelectorAll(".row.active"), function (r) { r.classList.remove("active"); });
+        row.classList.add("active"); detail(f);
+      }
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+      b.appendChild(row);
+      if (i === 0) open();
+    });
+    var hits = flags.filter(function (f) { return f && f.flipped === true; }).length;
+    b.appendChild(el("div", { style: "padding:12px 16px;font-size:13px;color:var(--ink-2);border-top:1px solid var(--line)",
+      text: hits + " of these " + flags.length + " flags are planted errors; " + (flags.length - hits) + " are false alarms." }));
+  }
+
+  function detail(f) {
+    var b = clear($("detail")), pre = el("pre", { "class": "ocr", style: "height:auto;max-height:200px;-webkit-mask-image:none;mask-image:none" , text: "Loading…" });
+    b.appendChild(el("div", { "class": "dhead" }, [el("h3", { "class": "mono", text: d(f.doc_id) }),
+      f.flipped === true ? el("span", { "class": "badge hit", text: "✓ Planted error" })
+        : f.flipped === false ? el("span", { "class": "badge miss", text: "False alarm" }) : null]));
+    b.appendChild(say("p", ["Filed as ", ["b", d(f.given_label)], "; Drex says ", ["drex", d(f.drex_top)],
+      " (flag score " + (isNum(f.flag_score) ? f.flag_score.toFixed(4) : DASH) + ")."]));
+    b.appendChild(scanImg(f.doc_id));
+    b.appendChild(probBars(f.drex_probs, f.given_label));
+    var v = verdict(f); if (v) { v.style.marginTop = "12px"; b.appendChild(v); }
+    var det = el("details", { style: "margin-top:10px" }, [el("summary", { style: "cursor:pointer;font-size:13px;color:var(--ink-2)", text: "Text NDI read from this scan" }), pre]);
+    b.appendChild(det);
+    ocrInto(pre, f.doc_id);
+  }
+
+  // ---------- 7. limits ----------
+  function limits(m) {
+    var D = m.drex || {}, L = m.llm || {}, E = m.n_planted_errors_test;
+    var fa = (m.top_flags || []).filter(function (f) { return f && f.flipped === false; })[0];
+    var c = clear($("limit-cards"));
+    function card(t, parts) { c.appendChild(el("div", { "class": "card" }, [el("h4", { text: t }), say("p", parts)])); }
+    card("Drex makes its own mistakes", ["Drex labels ", ["b", pct(D.accuracy_vs_true, 1)], " of test pages correctly. Its ",
+      ["b", d(D.false_alarms) + " false alarms"], " are pages it misread", fa ? ": for example " : ".",
+      fa ? ["b", d(fa.doc_id)] : "", fa ? " is correctly filed as a " + d(fa.given_label) + ", but Drex said " + d(fa.drex_top) + " (" + pct(get(fa.drex_probs, fa.drex_top)) + ")." : ""]);
+    card("The errors are planted", ["We flipped labels at random. Real-world label mistakes are often subtler (a report filed as a memo by a tired annotator), so these numbers show the method works on clear-cut errors, not how often real errors occur."]);
+    card("A small sample", ["The test split has ", ["b", d(m.n_test) + " documents and " + d(E) + " errors"],
+      ", so each error is worth about " + (isNum(E) && E ? (100 / E).toFixed(0) : DASH) + " points of recall. Treat the percentages as rough."]);
+    card("A modest baseline", ["The baseline is a small open model (llama3.2) running on a laptop, not a frontier LLM. It labels ",
+      ["b", pct(L.accuracy_vs_true, 1)], " of pages correctly. A stronger LLM would likely do better."]);
+    card("Old, narrow data", ["RVL-CDIP is 1990s scans from tobacco-industry archives, in six document types. Modern documents may behave differently."]);
+    card("Cost not reported", [isNum(D.cost_per_1k_docs) ? "Drex costs about $" + D.cost_per_1k_docs + " per 1,000 documents."
+      : "Drex is billed per input token, but the per-token price isn't set in config.py yet, so this page doesn't quote a cost."]);
+  }
+
+  function foot(m) {
+    $("foot").textContent = "Every number on this page is read live from results/metrics.json (test split, " + d(m.n_test) +
+      " documents; threshold chosen on " + d(m.n_dev) + " dev documents). Pipeline: RVL-CDIP scans → NDI parse → Drex / local LLM → src/score.py.";
+  }
+
+  function navSpy() {
+    if (!("IntersectionObserver" in window)) return;
+    var links = {};
+    Array.prototype.forEach.call(document.querySelectorAll("nav a"), function (a) { links[a.getAttribute("href").slice(1)] = a; });
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) {
+          Object.keys(links).forEach(function (k) { links[k].classList.remove("on"); });
+          if (links[e.target.id]) links[e.target.id].classList.add("on");
+        }
+      });
+    }, { rootMargin: "-40% 0px -55% 0px" });
+    Object.keys(links).forEach(function (id) { var s = $(id); if (s) io.observe(s); });
   }
 
   function load() {
@@ -277,17 +338,14 @@
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (m) {
         m = m || {};
-        [renderHeadline, renderContext, renderTotals, renderFlags, renderChart, renderFoot].forEach(function (f) {
+        [hero, setup, example, results, budget, queue, limits, foot].forEach(function (f) {
           try { f(m); } catch (e) { console.error(f.name, e); }
         });
+        navSpy();
       })
       .catch(function (e) {
-        var hint = location.protocol === "file:" ?
-          " Open via a server: python3 -m http.server from the repo root, then /demo/." : "";
-        ["headline", "totals", "flags"].forEach(function (id) {
-          var b = box(id);
-          if (b) { clear(b); b.appendChild(el("div", { "class": "err", text: "Could not load metrics.json: " + e.message + "." + hint })); }
-        });
+        var hint = location.protocol === "file:" ? " Open via a server: run python3 -m http.server in the repo root, then go to /demo/." : "";
+        clear($("answer")).appendChild(el("span", { "class": "err", text: "Could not load results/metrics.json (" + e.message + ")." + hint }));
       });
   }
 

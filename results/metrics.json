@@ -3,6 +3,18 @@
   "n_test": 200,
   "n_dev": 100,
   "n_planted_errors_test": 21,
+  "n_planted_errors_total": 30,
+  "n_planted_errors_dev": 9,
+  "noise_rate": 0.1,
+  "classes": [
+    "invoice",
+    "letter",
+    "form",
+    "resume",
+    "report",
+    "memo"
+  ],
+  "llm_conf_100_count": 274,
   "threshold": 0.95,
   "drex": {
     "threshold": 0.95,
@@ -171,6 +183,7 @@
       "doc_id": "doc_059",
       "given_label": "memo",
       "drex_top": "resume",
+      "true_label": "resume",
       "drex_probs": {
         "invoice": 0.0005,
         "letter": 0.0012,
@@ -186,6 +199,7 @@
       "doc_id": "doc_096",
       "given_label": "resume",
       "drex_top": "letter",
+      "true_label": "letter",
       "drex_probs": {
         "invoice": 0.0023,
         "letter": 0.981,
@@ -201,6 +215,7 @@
       "doc_id": "doc_138",
       "given_label": "memo",
       "drex_top": "resume",
+      "true_label": "resume",
       "drex_probs": {
         "invoice": 0.0046,
         "letter": 0.0033,
@@ -216,6 +231,7 @@
       "doc_id": "doc_275",
       "given_label": "invoice",
       "drex_top": "memo",
+      "true_label": "letter",
       "drex_probs": {
         "invoice": 0.0023,
         "letter": 0.0728,
@@ -231,6 +247,7 @@
       "doc_id": "doc_215",
       "given_label": "form",
       "drex_top": "letter",
+      "true_label": "letter",
       "drex_probs": {
         "invoice": 0.0089,
         "letter": 0.9801,
@@ -246,6 +263,7 @@
       "doc_id": "doc_279",
       "given_label": "resume",
       "drex_top": "form",
+      "true_label": "form",
       "drex_probs": {
         "invoice": 0.0039,
         "letter": 0.07,
@@ -261,6 +279,7 @@
       "doc_id": "doc_037",
       "given_label": "form",
       "drex_top": "memo",
+      "true_label": "form",
       "drex_probs": {
         "invoice": 0.0018,
         "letter": 0.0308,
@@ -276,6 +295,7 @@
       "doc_id": "doc_106",
       "given_label": "resume",
       "drex_top": "form",
+      "true_label": "invoice",
       "drex_probs": {
         "invoice": 0.2571,
         "letter": 0.0553,
@@ -291,6 +311,7 @@
       "doc_id": "doc_098",
       "given_label": "form",
       "drex_top": "letter",
+      "true_label": "letter",
       "drex_probs": {
         "invoice": 0.0028,
         "letter": 0.9603,
@@ -306,6 +327,7 @@
       "doc_id": "doc_115",
       "given_label": "form",
       "drex_top": "memo",
+      "true_label": "memo",
       "drex_probs": {
         "invoice": 0.0016,
         "letter": 0.0217,
@@ -321,6 +343,7 @@
       "doc_id": "doc_299",
       "given_label": "letter",
       "drex_top": "memo",
+      "true_label": "letter",
       "drex_probs": {
         "invoice": 0.0008,
         "letter": 0.0043,
@@ -336,6 +359,7 @@
       "doc_id": "doc_285",
       "given_label": "invoice",
       "drex_top": "form",
+      "true_label": "form",
       "drex_probs": {
         "invoice": 0.0062,
         "letter": 0.1379,
@@ -351,6 +375,7 @@
       "doc_id": "doc_198",
       "given_label": "resume",
       "drex_top": "memo",
+      "true_label": "form",
       "drex_probs": {
         "invoice": 0.0146,
         "letter": 0.3466,
@@ -366,6 +391,7 @@
       "doc_id": "doc_260",
       "given_label": "report",
       "drex_top": "memo",
+      "true_label": "report",
       "drex_probs": {
         "invoice": 0.0069,
         "letter": 0.134,
@@ -381,6 +407,7 @@
       "doc_id": "doc_121",
       "given_label": "report",
       "drex_top": "invoice",
+      "true_label": "invoice",
       "drex_probs": {
         "invoice": 0.8374,
         "letter": 0.0762,
@@ -396,6 +423,7 @@
       "doc_id": "doc_075",
       "given_label": "report",
       "drex_top": "letter",
+      "true_label": "invoice",
       "drex_probs": {
         "invoice": 0.152,
         "letter": 0.5151,
@@ -411,6 +439,7 @@
       "doc_id": "doc_104",
       "given_label": "letter",
       "drex_top": "memo",
+      "true_label": "letter",
       "drex_probs": {
         "invoice": 0.0014,
         "letter": 0.0165,
@@ -426,6 +455,7 @@
       "doc_id": "doc_185",
       "given_label": "form",
       "drex_top": "memo",
+      "true_label": "form",
       "drex_probs": {
         "invoice": 0.0077,
         "letter": 0.4499,
@@ -441,6 +471,7 @@
       "doc_id": "doc_132",
       "given_label": "report",
       "drex_top": "memo",
+      "true_label": "memo",
       "drex_probs": {
         "invoice": 0.0023,
         "letter": 0.063,
@@ -456,6 +487,7 @@
       "doc_id": "doc_295",
       "given_label": "report",
       "drex_top": "invoice",
+      "true_label": "form",
       "drex_probs": {
         "invoice": 0.5161,
         "letter": 0.0645,
