@@ -41,28 +41,27 @@ on Model Performance", EMNLP 2025 (aclanthology.org/2025.emnlp-main.1360).*
 
 ## 4. Live demo (1:50 to 3:20)
 
-*Before you start: `python3 -m http.server 8000` in the repo root, open `http://localhost:8000/demo/`. Use the
-numbered menu at the top to jump between sections.*
+*Before you start: run `python src/app.py` in the repo and open `http://localhost:8000/demo/`. Keep Ollama
+running. Do one practice upload first so the local model is already loaded.*
 
-> **[top of page]** The page answers one question: can a model find wrong labels without seeing them? The
-> answer is right there: 21 hidden errors in 200 test documents, Drex raised 25 flags and 18 were real.
+> **[① Add your files: click "Resume filed as memo", then Analyze]** Here's a scanned page that someone filed
+> as a memo. Cuckoo reads it with NDI and asks Drex and the LLM what it is. Neither sees the label.
 >
-> **[click 3 · One document]** Here's how one document gets flagged. doc 059 is filed as a memo. NDI reads the
-> page, and only that text goes to Drex. Drex says resume, 99%, and gives memo 0.1%. So the flag score is
-> 0.9995, above our threshold of 0.95, and it's flagged. And it really was one of our planted errors.
+> **[② Drex vs the LLM: the two answer boxes]** Both say resume. But look at how they say it: Drex gives a
+> real probability for every option, while the LLM just names one answer and calls itself 100% sure.
 >
-> **[click 4 · Results]** Every square is a flag. Green is a real error, red a false alarm. Drex: mostly green.
-> The baseline finds almost as many, 16, but look at the red: 61 false alarms to wade through.
+> **[the timeline]** And here's where the time goes on this exact file. The LLM writes its answer one token
+> at a time. Drex doesn't write anything: it scores every option in a single pass. *(Read the two numbers
+> off the screen.)*
 >
-> **[click 5 · Review budget]** If a reviewer only has time for 20 documents, Drex gives them 15 real errors,
-> the baseline about 4. The baseline says it's 100% sure about almost everything, so its flags can't be ranked.
+> **[③ The result]** And the verdict, in plain words: probably filed under the wrong label. Check it.
 >
-> **[click 6 · Explore, click a red "False alarm" row]** We're honest about misses too: this one was filed
-> correctly, and Drex misread it.
+> **[back to ①: drop in 3 files at once, e.g. the 3 sample buttons]** It works on a whole dataset too: one
+> line per file, a summary of what's mislabeled, and what each model thinks the dataset contains.
 
-*(Figures: `n_planted_errors_test` 21, `n_test` 200, `drex.n_flagged` 25, `drex.errors_found` 18,
-`top_flags[0]`, `threshold` 0.95, `llm.errors_found` 16, `llm.false_alarms` 61, `budget_curve["20"]` 15 / 4.1,
-`llm_conf_100_count` 274.)*
+*On-screen timings change from run to run, so read them off the page; don't memorise them. If the LLM wins
+on a single file, say so: the page explains why (Drex's internet round trip vs a model on this laptop). The
+fair speed comparison is the 300-document one in section 5.*
 
 ## 5. Numbers (3:20 to 4:20)
 
