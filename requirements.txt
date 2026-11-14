@@ -1,0 +1,6 @@
+httpx
+pandas
+matplotlib
+tenacity
+python-dotenv
+anthropic
