@@ -10,6 +10,7 @@ The API key stays on this server; the browser never sees it.
 """
 import asyncio
 import base64
+import re
 import json
 import os
 import sys
@@ -37,6 +38,11 @@ UPLOADS = ROOT / "data" / "uploads"
 MIME = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".tif": "image/tiff", ".tiff": "image/tiff", ".webp": "image/webp"}
 MAX_BYTES = 15 * 1024 * 1024
+PDF_PAGES = 3            # read the first 3 pages of a PDF (a cover page alone can mislead)
+MAX_CHARS = 15000        # keep the text within the local LLM's context window
+# Live uploads can be anything, so both models may also answer "other" instead of forcing one of the six.
+LIVE_CLASSES = config.CLASSES + ["other"]
+DREX_DESCRIPTIONS = {"other": "none of the listed document types"}
 
 # One long-lived event loop: the model clients keep async HTTP clients bound to it.
 LOOP = asyncio.new_event_loop()
@@ -58,17 +64,19 @@ async def analyze(name: str, raw: bytes, filed_as: str) -> dict:
     path.write_bytes(raw)
     c, up = await _ndi_clients()
     t0 = time.perf_counter()
-    parsed = await parse_one(c, up, path, mime=MIME[ext], first_page_only=(ext == ".pdf"))
+    parsed = await parse_one(c, up, path, mime=MIME[ext], max_pages=PDF_PAGES if ext == ".pdf" else None)
     ndi_ms = int((time.perf_counter() - t0) * 1000)
-    text = parsed["text"].replace("--- Page 1 ---\n", "", 1)
-    out = {"name": name, "filed_as": filed_as or None, "ndi_ms": ndi_ms,
-           "text_preview": text[:700], "empty_text": not text.strip()}
+    text = re.sub(r"^--- Page \d+ ---\s*$", "", parsed["text"], flags=re.M).strip()
+    truncated = len(text) > MAX_CHARS
+    text = text[:MAX_CHARS]
+    out = {"name": name, "filed_as": filed_as or None, "ndi_ms": ndi_ms, "pages_read": parsed.get("page_count"),
+           "truncated": truncated, "text_preview": text[:700], "empty_text": not text.strip()}
     if not text.strip():
         return out
 
     async def run_drex():
         try:
-            r = await drex_client.classify(text, config.CLASSES)
+            r = await drex_client.classify(text, LIVE_CLASSES, DREX_DESCRIPTIONS)
             top = max(r["probs"], key=r["probs"].get)
             return {"top": top, "confidence": r["probs"][top], "probs": r["probs"], "latency_ms": r["latency_ms"]}
         except Exception as e:
@@ -76,7 +84,7 @@ async def analyze(name: str, raw: bytes, filed_as: str) -> dict:
 
     async def run_llm():
         try:
-            r = await llm_client.classify(text, config.CLASSES)
+            r = await llm_client.classify(text, LIVE_CLASSES)
             return {"top": r["label"], "confidence": None if r["confidence"] is None else r["confidence"] / 100,
                     "latency_ms": r["latency_ms"], "model": llm_client.MODEL}
         except Exception as e:

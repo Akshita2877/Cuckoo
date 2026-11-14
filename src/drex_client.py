@@ -72,7 +72,7 @@ async def _post(body: dict) -> dict:
     return r.json()
 
 
-async def classify(text: str, classes: list[str]) -> dict:
+async def classify(text: str, classes: list[str], descriptions: dict | None = None) -> dict:
     """Return {"probs": {class: float}, "latency_ms": int, "input_tokens": int}."""
     body = {
         "model": MODEL,
@@ -81,7 +81,7 @@ async def classify(text: str, classes: list[str]) -> dict:
             "doc_type": {
                 "type": "choice",
                 "instructions": QUESTION,
-                "criteria": {c: None for c in classes},
+                "criteria": {c: (descriptions or {}).get(c) for c in classes},
             }
         },
     }

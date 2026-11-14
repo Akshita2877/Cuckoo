@@ -49,12 +49,18 @@
   function initTry(m) {
     $("classes").textContent = CLASSES.join(", ");
     var drop = $("drop"), picker = $("picker");
-    drop.addEventListener("click", function (e) { if (e.target !== picker) picker.click(); });
+    drop.addEventListener("click", function () { picker.click(); });
     drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); picker.click(); } });
     picker.addEventListener("change", function () { add(picker.files); picker.value = ""; });
     ["dragenter", "dragover"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
     ["dragleave", "drop"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
-    drop.addEventListener("drop", function (e) { add(e.dataTransfer.files); });
+    drop.addEventListener("drop", function (e) { e.stopPropagation(); add(e.dataTransfer.files); });
+    // A file dropped anywhere else must not make the browser open it (that replaces the page).
+    window.addEventListener("dragover", function (e) { e.preventDefault(); });
+    window.addEventListener("drop", function (e) {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { add(e.dataTransfer.files); $("try").scrollIntoView(); }
+    });
     Array.prototype.forEach.call(document.querySelectorAll("[data-sample]"), function (b) {
       b.addEventListener("click", function () {
         fetch("../data/raw/scans/" + b.dataset.sample + ".png").then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
@@ -136,12 +142,19 @@
     while (top.nextSibling) card.removeChild(top.nextSibling);
     if (r.error) { meta.textContent = "Couldn't analyze: " + r.error; return false; }
     if (r.empty_text) { meta.textContent = "NDI found no readable text on page 1, so neither model can judge it."; return false; }
-    meta.textContent = "Page read by NDI in " + secs(r.ndi_ms) + (q.filed ? " · filed as " + q.filed : " · no label given");
+    var pages = isNum(r.pages_read) ? r.pages_read + " page" + (r.pages_read > 1 ? "s" : "") : "page";
+    meta.textContent = pages + " read by NDI in " + secs(r.ndi_ms) + (r.truncated ? " (long text shortened)" : "") +
+      (q.filed ? " · filed as " + q.filed : " · no label given");
     var D = r.drex || {}, L = r.llm || {};
     // verdict, in plain words
     var v, isFlag = false;
-    if (q.filed && D.top) {
-      var llmAgree = L.top ? (L.top === D.top ? " The LLM agrees." : " The LLM says " + L.top + ".") : "";
+    function nm(t) { return t === "other" ? "none of these types" : t; }
+    if (D.top === "other") {
+      v = [q.filed ? "warn" : "info", "🧐", q.filed ? "This doesn't look like " + aAn(q.filed) + ", or like any of the other types Cuckoo knows."
+                                                   : "This doesn't look like any of the six document types Cuckoo knows.",
+           "Drex is " + pct(D.confidence) + " sure it's none of: " + CLASSES.join(", ") + "." + (L.top ? " The LLM says " + nm(L.top) + "." : "")];
+    } else if (q.filed && D.top) {
+      var llmAgree = L.top ? (L.top === D.top ? " The LLM agrees." : " The LLM says " + nm(L.top) + ".") : "";
       if (D.top !== q.filed && D.confidence >= 0.95) {
         isFlag = true;
         v = ["bad", "⚠️", "Probably mislabeled. It's filed as " + aAn(q.filed) + ", but it reads like " + aAn(D.top) + ".",
@@ -154,14 +167,14 @@
       }
     } else if (D.top) {
       v = ["info", "🔎", "Drex thinks this is " + aAn(D.top) + " (" + pct(D.confidence) + " sure).",
-           (L.top ? "The LLM thinks it's " + aAn(L.top) + ". " : "") + "Pick a 'filed as' label to check a label."];
+           (L.top ? "The LLM thinks it's " + (L.top === "other" ? "none of these types" : aAn(L.top)) + ". " : "") + "Pick a 'filed as' label to check a label."];
     } else {
       v = ["warn", "⚠️", "Drex couldn't answer: " + d(D.error), ""];
     }
     card.appendChild(el("div", { "class": "verdict " + v[0] }, [el("span", { "class": "e", text: v[1] }), el("div", null, [v[2], v[3] ? el("small", { text: v[3] }) : null])]));
     function side(cls, name, sw, R, color) {
       return el("div", { "class": cls }, [el("span", { "class": "who" }, [el("span", { "class": "sw " + sw }), name]),
-        el("div", { "class": "ans", text: R.top || "no answer" }),
+        el("div", { "class": "ans", style: R.top === "other" ? "text-transform:none" : "", text: R.top === "other" ? "None of these" : (R.top || "no answer") }),
         el("div", { "class": "conf", text: R.error ? R.error : (isNum(R.confidence) ? pct(R.confidence) + " sure" : "") }),
         isNum(R.confidence) ? bar(R.confidence, color) : null]);
     }
@@ -170,7 +183,9 @@
       var mx = Math.max(D.latency_ms, L.latency_ms), faster = D.latency_ms <= L.latency_ms;
       var ratio = (faster ? L.latency_ms / Math.max(1, D.latency_ms) : D.latency_ms / Math.max(1, L.latency_ms)).toFixed(1);
       var lanes = [];
-      var race = el("div", { "class": "race" }, [el("div", { "class": "head" }, ["⏱ Answer time: ", el("span", { text: (faster ? "Drex" : "The LLM") + " was " + ratio + "× faster" })])]);
+      var same = Math.max(D.latency_ms, L.latency_ms) < 1.2 * Math.min(D.latency_ms, L.latency_ms);
+      var race = el("div", { "class": "race" }, [el("div", { "class": "head" }, ["⏱ Answer time for this file: ",
+        el("span", { style: same ? "color:var(--ink-2)" : "", text: same ? "about the same" : (faster ? "Drex" : "The LLM") + " was " + ratio + "× faster" })])]);
       [["Drex", D.latency_ms, "var(--drex)"], ["LLM", L.latency_ms, "var(--llm)"]].forEach(function (x) {
         var i = el("i", { style: "background:" + x[2] }); lanes.push([i, x[1] / mx]);
         race.appendChild(el("div", { "class": "row" }, [el("span", { text: x[0] }), el("div", { "class": "lane" }, [i]), el("span", { "class": "t", text: secs(x[1]) })]));

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cuckoo: catch mislabeled documents</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%A5%9A%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -211,18 +212,18 @@
       whether the label looks right. The label is never shown to the models.</p>
     <div class="try">
       <div class="card">
-        <label class="drop" id="drop" tabindex="0">
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose files to analyze">
           <div class="ic">📄</div>
           <h3>Drop files here or click to browse</h3>
-          <p>PDF, PNG, JPG or TIFF · up to 15 MB each · first page is used</p>
-          <input type="file" id="picker" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp" hidden>
-        </label>
+          <p>PDF, PNG, JPG or TIFF · up to 15 MB each · the first 3 pages of a PDF are read</p>
+        </div>
+        <input type="file" id="picker" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,application/pdf,image/*" hidden>
         <div class="samples">No file handy? <button class="btn ghost" data-sample="doc_059" data-filed="memo">A resume filed as a memo</button>
           <button class="btn ghost" data-sample="doc_003" data-filed="letter">A letter filed correctly</button></div>
         <div class="files" id="files"></div>
         <button class="btn primary" id="go" disabled>Analyze</button>
         <div id="status"></div>
-        <p class="hint">Types Cuckoo knows: <span id="classes"></span>.</p>
+        <p class="hint">Types Cuckoo knows: <span id="classes"></span>. Anything else is reported as “none of these”.</p>
       </div>
       <div class="out" id="out"><div class="placeholder">Your results appear here: what Drex says, what the LLM says,
         who answered faster, and a plain-English verdict.</div></div>

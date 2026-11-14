@@ -41,7 +41,7 @@ async def _req(c: httpx.AsyncClient, method: str, url: str, **kw) -> httpx.Respo
 
 
 async def parse_one(c: httpx.AsyncClient, up_c: httpx.AsyncClient, img: Path,
-                    mime: str = "image/png", first_page_only: bool = False) -> dict:
+                    mime: str = "image/png", max_pages: int | None = None) -> dict:
     name = img.name
     g = await _req(c, "POST", f"{BASE}/v1/documents/upload-grants",
                    json={"path": f"cuckoo/{name}", "ttl_seconds": 600})
@@ -60,7 +60,7 @@ async def parse_one(c: httpx.AsyncClient, up_c: httpx.AsyncClient, img: Path,
                    json={"source": {"type": "workspace_file", "workspace_id": g["workspace_id"],
                                     "file_id": file_id},
                          "output": {"formats": ["text"]}, "parse_mode": "low",
-                         **({"page_ranges": [{"start": 1, "end": 1}]} if first_page_only else {})})
+                         **({"page_ranges": [{"start": 1, "end": max_pages}]} if max_pages else {})})
     if r.status_code >= 400:
         raise RuntimeError(f"parse {r.status_code}: {r.text[:200]}")
     job = r.json()
@@ -75,7 +75,7 @@ async def parse_one(c: httpx.AsyncClient, up_c: httpx.AsyncClient, img: Path,
     text = doc.get("text")
     if text is None and doc.get("content_url"):
         text = (await _req(c, "GET", doc["content_url"])).json().get("text")
-    return {"text": text or "", "ocr_applied": job["result"].get("ocr_applied"),
+    return {"text": text or "", "ocr_applied": job["result"].get("ocr_applied"), "page_count": doc.get("page_count"),
             "job_id": job["job_id"], "cost": job.get("cost")}
 
 
