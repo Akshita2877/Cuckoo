@@ -1,0 +1,351 @@
+{
+  "n_docs": 300,
+  "n_test": 200,
+  "n_dev": 100,
+  "n_planted_errors_test": 21,
+  "threshold": 0.95,
+  "drex": {
+    "threshold": 0.95,
+    "errors_found": 18,
+    "false_alarms": 7,
+    "recall": 0.8571,
+    "precision": 0.72,
+    "budget_curve": {
+      "5": 5.0,
+      "10": 9.0,
+      "20": 15.0
+    },
+    "latency_p50_ms": 306,
+    "latency_p95_ms": 480,
+    "cost_per_1k_docs": null,
+    "accuracy_vs_true": 0.785,
+    "n_scored": 200
+  },
+  "llm": {
+    "threshold": 0.99,
+    "errors_found": 16,
+    "false_alarms": 61,
+    "recall": 0.7619,
+    "precision": 0.2078,
+    "budget_curve": {
+      "5": 1.0,
+      "10": 2.0,
+      "20": 4.1
+    },
+    "latency_p50_ms": 561,
+    "latency_p95_ms": 1242,
+    "cost_per_1k_docs": 0.0,
+    "accuracy_vs_true": 0.605,
+    "n_scored": 200
+  },
+  "top_flags": [
+    {
+      "doc_id": "doc_059",
+      "given_label": "memo",
+      "drex_top": "resume",
+      "drex_probs": {
+        "invoice": 0.0005,
+        "letter": 0.0012,
+        "form": 0.0044,
+        "resume": 0.9888,
+        "report": 0.0046,
+        "memo": 0.0005
+      },
+      "flag_score": 0.9995,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_096",
+      "given_label": "resume",
+      "drex_top": "letter",
+      "drex_probs": {
+        "invoice": 0.0023,
+        "letter": 0.981,
+        "form": 0.0025,
+        "resume": 0.0012,
+        "report": 0.0018,
+        "memo": 0.0112
+      },
+      "flag_score": 0.9988,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_138",
+      "given_label": "memo",
+      "drex_top": "resume",
+      "drex_probs": {
+        "invoice": 0.0046,
+        "letter": 0.0033,
+        "form": 0.0053,
+        "resume": 0.9734,
+        "report": 0.0121,
+        "memo": 0.0013
+      },
+      "flag_score": 0.9987,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_275",
+      "given_label": "invoice",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0023,
+        "letter": 0.0728,
+        "form": 0.0023,
+        "resume": 0.0011,
+        "report": 0.0053,
+        "memo": 0.9161
+      },
+      "flag_score": 0.9977,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_215",
+      "given_label": "form",
+      "drex_top": "letter",
+      "drex_probs": {
+        "invoice": 0.0089,
+        "letter": 0.9801,
+        "form": 0.0026,
+        "resume": 0.0008,
+        "report": 0.0014,
+        "memo": 0.0062
+      },
+      "flag_score": 0.9974,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_279",
+      "given_label": "resume",
+      "drex_top": "form",
+      "drex_probs": {
+        "invoice": 0.0039,
+        "letter": 0.07,
+        "form": 0.8413,
+        "resume": 0.0028,
+        "report": 0.0466,
+        "memo": 0.0355
+      },
+      "flag_score": 0.9972,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_037",
+      "given_label": "form",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0018,
+        "letter": 0.0308,
+        "form": 0.0034,
+        "resume": 0.001,
+        "report": 0.0058,
+        "memo": 0.9572
+      },
+      "flag_score": 0.9966,
+      "flipped": false
+    },
+    {
+      "doc_id": "doc_106",
+      "given_label": "resume",
+      "drex_top": "form",
+      "drex_probs": {
+        "invoice": 0.2571,
+        "letter": 0.0553,
+        "form": 0.635,
+        "resume": 0.0038,
+        "report": 0.0104,
+        "memo": 0.0385
+      },
+      "flag_score": 0.9962,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_098",
+      "given_label": "form",
+      "drex_top": "letter",
+      "drex_probs": {
+        "invoice": 0.0028,
+        "letter": 0.9603,
+        "form": 0.0039,
+        "resume": 0.0014,
+        "report": 0.0137,
+        "memo": 0.018
+      },
+      "flag_score": 0.9961,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_115",
+      "given_label": "form",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0016,
+        "letter": 0.0217,
+        "form": 0.0039,
+        "resume": 0.0008,
+        "report": 0.0023,
+        "memo": 0.9697
+      },
+      "flag_score": 0.9961,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_299",
+      "given_label": "letter",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0008,
+        "letter": 0.0043,
+        "form": 0.0015,
+        "resume": 0.0005,
+        "report": 0.0112,
+        "memo": 0.9817
+      },
+      "flag_score": 0.9957,
+      "flipped": false
+    },
+    {
+      "doc_id": "doc_285",
+      "given_label": "invoice",
+      "drex_top": "form",
+      "drex_probs": {
+        "invoice": 0.0062,
+        "letter": 0.1379,
+        "form": 0.8412,
+        "resume": 0.0026,
+        "report": 0.0033,
+        "memo": 0.0087
+      },
+      "flag_score": 0.9938,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_198",
+      "given_label": "resume",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0146,
+        "letter": 0.3466,
+        "form": 0.0414,
+        "resume": 0.0068,
+        "report": 0.0205,
+        "memo": 0.57
+      },
+      "flag_score": 0.9932,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_260",
+      "given_label": "report",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0069,
+        "letter": 0.134,
+        "form": 0.0263,
+        "resume": 0.004,
+        "report": 0.0114,
+        "memo": 0.8174
+      },
+      "flag_score": 0.9886,
+      "flipped": false
+    },
+    {
+      "doc_id": "doc_121",
+      "given_label": "report",
+      "drex_top": "invoice",
+      "drex_probs": {
+        "invoice": 0.8374,
+        "letter": 0.0762,
+        "form": 0.0225,
+        "resume": 0.0034,
+        "report": 0.0119,
+        "memo": 0.0485
+      },
+      "flag_score": 0.9881,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_075",
+      "given_label": "report",
+      "drex_top": "letter",
+      "drex_probs": {
+        "invoice": 0.152,
+        "letter": 0.5151,
+        "form": 0.2388,
+        "resume": 0.0059,
+        "report": 0.0145,
+        "memo": 0.0737
+      },
+      "flag_score": 0.9855,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_104",
+      "given_label": "letter",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0014,
+        "letter": 0.0165,
+        "form": 0.002,
+        "resume": 0.0009,
+        "report": 0.0165,
+        "memo": 0.9628
+      },
+      "flag_score": 0.9835,
+      "flipped": false
+    },
+    {
+      "doc_id": "doc_185",
+      "given_label": "form",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0077,
+        "letter": 0.4499,
+        "form": 0.0166,
+        "resume": 0.0037,
+        "report": 0.0514,
+        "memo": 0.4707
+      },
+      "flag_score": 0.9834,
+      "flipped": false
+    },
+    {
+      "doc_id": "doc_132",
+      "given_label": "report",
+      "drex_top": "memo",
+      "drex_probs": {
+        "invoice": 0.0023,
+        "letter": 0.063,
+        "form": 0.0084,
+        "resume": 0.0015,
+        "report": 0.0178,
+        "memo": 0.907
+      },
+      "flag_score": 0.9822,
+      "flipped": true
+    },
+    {
+      "doc_id": "doc_295",
+      "given_label": "report",
+      "drex_top": "invoice",
+      "drex_probs": {
+        "invoice": 0.5161,
+        "letter": 0.0645,
+        "form": 0.3436,
+        "resume": 0.0049,
+        "report": 0.0218,
+        "memo": 0.0492
+      },
+      "flag_score": 0.9782,
+      "flipped": true
+    }
+  ],
+  "notes": {
+    "flag_score_drex": "1 - P(given_label)",
+    "flag_score_llm": "confidence/100 if label != given_label else 0",
+    "threshold_chosen_on": "dev split (max F1)",
+    "reported_on": "test split",
+    "budget_curve": "planted errors in the top-K flags (expected value, score ties broken at random)",
+    "cost": "null = price unknown"
+  }
+}
