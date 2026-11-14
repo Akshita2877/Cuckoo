@@ -21,6 +21,16 @@ except ModuleNotFoundError:
              "git pull origin main (after B merges), then re-run.")
 
 
+def cfg_path(x) -> Path:
+    """config paths may be relative; resolve them against the repo root, not the cwd."""
+    x = Path(x)
+    return x if x.is_absolute() else ROOT / x
+
+
+def out_path(model: str) -> Path:
+    return cfg_path(config.RESULTS_DIR) / f"{model}.jsonl"
+
+
 def done_ids(path: Path) -> set[str]:
     ids = set()
     if path.exists():
@@ -48,11 +58,18 @@ async def main(model: str, limit: int | None, concurrency: int) -> None:
     else:
         from llm_client import classify
 
-    out = Path(config.RESULTS_DIR) / f"{model}.jsonl"
+    out = out_path(model)
     out.parent.mkdir(parents=True, exist_ok=True)
+    # If a previous run was killed mid-write, end the torn line so the next append stays valid.
+    if out.exists() and out.stat().st_size and not out.read_bytes().endswith(b"\n"):
+        with out.open("a") as fh:
+            fh.write("\n")
     skip = done_ids(out)
-    files = sorted(Path(config.PARSED_DIR).glob("*.json"))
-    todo, unreadable = [], []
+    parsed_dir = cfg_path(config.PARSED_DIR)
+    files = sorted(parsed_dir.glob("*.json"))
+    if not files:
+        print(f"  WARNING no parsed documents found in {parsed_dir}")
+    todo, unreadable, dup_ids, seen = [], [], [], set()
     for f in files:
         try:  # B may still be writing a file; skip it now, the next run picks it up
             doc = json.loads(f.read_text())
@@ -60,6 +77,10 @@ async def main(model: str, limit: int | None, concurrency: int) -> None:
         except (json.JSONDecodeError, KeyError, UnicodeDecodeError, TypeError):
             unreadable.append(f.name)
             continue
+        if doc["doc_id"] in seen:  # two files with the same doc_id would make duplicate lines
+            dup_ids.append(doc["doc_id"])
+            continue
+        seen.add(doc["doc_id"])
         if doc["doc_id"] not in skip:
             todo.append(doc)
     if limit is not None:
@@ -67,6 +88,9 @@ async def main(model: str, limit: int | None, concurrency: int) -> None:
     print(f"{len(files)} parsed, {len(skip)} already done, {len(todo)} to run ({model})")
     if unreadable:
         print(f"  WARNING skipped {len(unreadable)} unreadable/partial files: {unreadable[:10]}")
+    if dup_ids:
+        print(f"  WARNING {len(dup_ids)} duplicate doc_ids across parsed files, kept the first: "
+              f"{dup_ids[:10]}")
     empty = [d["doc_id"] for d in todo if not str(d["text"]).strip()]
     if empty:
         print(f"  WARNING {len(empty)} docs have empty text (models will still guess; tell B): "
@@ -114,18 +138,29 @@ async def main(model: str, limit: int | None, concurrency: int) -> None:
 
 def check(model: str) -> None:
     """Task 5 check: line count, duplicate doc_ids, null probs/labels."""
-    out = Path(config.RESULTS_DIR) / f"{model}.jsonl"
-    rows = [json.loads(l) for l in out.read_text().splitlines() if l.strip()]
-    ids = [r["doc_id"] for r in rows]
+    out = out_path(model)
+    if not out.exists():
+        sys.exit(f"{out} does not exist yet; run: python src/run_eval.py --model {model}")
+    rows, corrupt = [], 0
+    for line in out.read_text().splitlines():
+        if line.strip():
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                corrupt += 1
+    ids = [r.get("doc_id") for r in rows]
     dups = len(ids) - len(set(ids))
     if model == "drex":
-        bad = [r["doc_id"] for r in rows
-               if not r.get("probs") or any(r["probs"].get(c) is None for c in config.CLASSES)]
+        bad = [r.get("doc_id") for r in rows
+               if not isinstance(r.get("probs"), dict)
+               or any(r["probs"].get(c) is None for c in config.CLASSES)]
     else:
-        bad = [r["doc_id"] for r in rows if r.get("label") is None]
-    n_parsed = len(list(Path(config.PARSED_DIR).glob("*.json")))
+        bad = [r.get("doc_id") for r in rows if r.get("label") is None]
+    n_parsed = len(list(cfg_path(config.PARSED_DIR).glob("*.json")))
+    ok = len(set(ids)) == n_parsed and not dups and not bad and not corrupt
     print(f"{out.name}: {len(rows)} lines (parsed docs: {n_parsed}), {dups} duplicate doc_ids, "
-          f"{len(bad)} null {'probs' if model == 'drex' else 'labels'} {bad[:10]}")
+          f"{len(bad)} null {'probs' if model == 'drex' else 'labels'} {bad[:10]}, "
+          f"{corrupt} corrupt lines -> {'OK' if ok else 'NOT OK'}")
 
 
 if __name__ == "__main__":

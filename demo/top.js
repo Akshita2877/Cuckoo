@@ -8,7 +8,12 @@
     return digits === undefined ? String(v) : v.toFixed(digits);
   }
   function ms(v) { return v === null || v === undefined ? "–" : num(Math.round(v)) + " ms"; }
-  function usd(v) { return v === null || v === undefined ? "–" : "$" + num(v, 2); }
+  // Small costs must not round to $0.00: show 2 significant digits below one cent.
+  function usd(v) {
+    if (v === null || v === undefined || typeof v !== "number" || !isFinite(v)) return "–";
+    if (v === 0) return "$0";
+    return "$" + (Math.abs(v) < 0.01 ? Number(v.toPrecision(2)).toString() : v.toFixed(2));
+  }
   function el(tag, attrs, children) {
     var e = document.createElement(tag);
     if (attrs) for (var k in attrs) {
@@ -67,6 +72,7 @@
       return el("th", { text: h });
     }));
     var rows = (m.top_flags || []).slice(0, 20).map(function (f) {
+      f = f || {};
       return el("tr", null, [
         el("td", { text: String(dash(f.doc_id)) }),
         el("td", { text: String(dash(f.given_label)) }),
@@ -78,13 +84,21 @@
     box.appendChild(el("table", { "class": "flags" }, [el("thead", null, [head]), el("tbody", null, rows)]));
   }
 
-  fetch("../results/metrics.json")
-    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-    .then(function (m) { renderTotals(m); renderFlags(m); })
-    .catch(function (e) {
-      ["totals", "flags"].forEach(function (id) {
-        var b = document.getElementById(id);
-        if (b) b.textContent = "Could not load metrics.json: " + e.message;
+  function load() {
+    fetch("../results/metrics.json")
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (m) { renderTotals(m || {}); renderFlags(m || {}); })
+      .catch(function (e) {
+        var hint = location.protocol === "file:" ?
+          " (open via a server: python3 -m http.server from the repo root, then /demo/)" : "";
+        ["totals", "flags"].forEach(function (id) {
+          var b = document.getElementById(id);
+          if (b) b.textContent = "Could not load metrics.json: " + e.message + hint;
+        });
       });
-    });
+  }
+
+  // Works whether index.html loads this script in <head> or at the end of <body>.
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);
+  else load();
 })();
