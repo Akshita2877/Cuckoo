@@ -109,10 +109,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", choices=["drex", "llm"], required=True)
     ap.add_argument("--limit", type=int)
-    ap.add_argument("--concurrency", type=int, default=8)
+    ap.add_argument("--concurrency", type=int,
+                    help="default 8 for drex; 1 for llm (local Ollama runs requests one at a "
+                         "time, so more just adds queue time to latency_ms)")
     ap.add_argument("--check", action="store_true", help="validate the output file and exit")
     a = ap.parse_args()
     if a.check:
         check(a.model)
     else:
-        asyncio.run(main(a.model, a.limit, a.concurrency))
+        conc = a.concurrency or (8 if a.model == "drex" else 1)
+        asyncio.run(main(a.model, a.limit, conc))
