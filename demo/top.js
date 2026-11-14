@@ -1,66 +1,65 @@
-// Cuckoo demo page. Plain JS, no libraries. All figures come from ../results/metrics.json
-// or from the live /api/analyze endpoint (src/app.py). Text is inserted with textContent only.
+// Cuckoo: upload files, compare Drex vs the LLM on THOSE files, plain-words verdict.
+// Everything shown comes from the live /api/analyze results (src/app.py). textContent only.
 (function () {
   "use strict";
-  var DASH = "–", CLASSES = [];
-  var ICON = { invoice: "🧾", letter: "✉️", form: "📝", resume: "👤", report: "📊", memo: "📌" };
+  var DASH = "–", CLASSES = ["invoice", "letter", "form", "resume", "report", "memo"];
+  var health = { ok: false }, queue = [], results = [], sel = -1;
 
   // ---------- helpers ----------
   function isNum(v) { return typeof v === "number" && isFinite(v); }
-  function d(v) { return v === null || v === undefined ? DASH : String(v); }
   function pct(v) { return isNum(v) ? Math.round(v * 100) + "%" : DASH; }
-  function secs(ms) { return isNum(ms) ? (ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s") : DASH; }
-  function n1(v) { return isNum(v) ? String(+v.toFixed(1)) : DASH; }
+  function t(ms) { return isNum(ms) ? (ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s") : DASH; }
   function $(id) { return document.getElementById(id); }
   function clear(b) { while (b.firstChild) b.removeChild(b.firstChild); return b; }
   function el(tag, a, kids) {
     var e = document.createElement(tag);
     for (var k in a || {}) {
-      if (k === "text") e.textContent = a[k];
-      else if (k === "class") e.className = a[k];
-      else if (k === "style") e.style.cssText = a[k];
-      else e.setAttribute(k, a[k]);
+      if (k === "text") e.textContent = a[k]; else if (k === "class") e.className = a[k];
+      else if (k === "style") e.style.cssText = a[k]; else e.setAttribute(k, a[k]);
     }
     (kids || []).forEach(function (c) { if (c !== null && c !== undefined && c !== false) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
     return e;
   }
-  function B(t, style) { return el("b", style ? { text: t, style: style } : { text: t }); }
-  function bar(frac, color) {
-    return el("div", { "class": "bar" }, [el("i", { style: "width:" + Math.max(2, Math.min(100, (frac || 0) * 100)).toFixed(1) + "%;background:" + color })]);
-  }
-  function svg(tag, a) { var e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (var k in a || {}) e.setAttribute(k, a[k]); return e; }
-  function aAn(w) { return /^[aeiou]/i.test(w || "") ? "an " + w : "a " + w; }
+  function B(x, style) { return el("b", style ? { text: x, style: style } : { text: x }); }
+  function bar(f, color) { return el("div", { "class": "bar" }, [el("i", { style: "width:" + Math.max(2, Math.min(100, (f || 0) * 100)).toFixed(1) + "%;background:" + color })]); }
+  function name(c) { return c === "other" ? "none of these" : (c || DASH); }
+  function aName(c) { return c === "other" ? "none of the known types" : (/^[aeiou]/i.test(c || "") ? "an " : "a ") + c; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function llmName() { return health.frontier ? "Frontier LLM" : "LLM"; }
 
-  // ---------- hero pills ----------
-  function pills(m) {
-    var A = m.overall_accuracy || {}, S = m.speed || {}, D = m.drex || {}, L = m.llm || {};
-    var x = isNum(S.llm_mean_ms) && isNum(S.drex_mean_ms) && S.drex_mean_ms ? (S.llm_mean_ms / S.drex_mean_ms).toFixed(1) + "×" : DASH;
-    var p = clear($("pills"));
-    [[pct(A.drex), "vs " + pct(A.llm), "documents correctly identified: Drex vs the LLM"],
-     [x, "faster", "Drex's average answer time (" + secs(S.drex_mean_ms) + " vs " + secs(S.llm_mean_ms) + ")"],
-     [n1((D.budget_curve || {})["20"]), "vs " + n1((L.budget_curve || {})["20"]), "real mistakes found when checking only the top 20 warnings"]
-    ].forEach(function (x) {
-      p.appendChild(el("div", { "class": "pill" }, [el("div", { "class": "v" }, [x[0] + " ", el("span", { text: x[1] })]), el("div", { "class": "l", text: x[2] })]));
-    });
+  // ---------- verdict in plain words (one file) ----------
+  function verdict(item) {
+    var r = item.r || {}, D = r.drex || {}, L = r.llm || {}, f = item.filed;
+    if (r.error) return { cls: "warn", e: "⚠️", chip: "Error", title: "Couldn't analyze this file", text: r.error };
+    if (r.empty_text) return { cls: "warn", e: "📭", chip: "No text", title: "No readable text found", text: "NDI couldn't read any text on the first pages, so neither model can judge it." };
+    if (!D.top) return { cls: "warn", e: "⚠️", chip: "Drex error", title: "Drex couldn't answer", text: D.error || "" };
+    var llmBit = L.top ? (L.top === D.top ? " The " + llmName() + " agrees." : " The " + llmName() + " thinks it's " + aName(L.top) + ".") : "";
+    if (f) {
+      if (D.top !== f && D.confidence >= 0.95)
+        return { cls: "bad", e: "⚠️", chip: "Mislabeled?", flag: true, title: "Probably filed under the wrong label",
+          text: "It's filed as " + aName(f) + ", but it reads like " + aName(D.top) + " (Drex is " + pct(D.confidence) + " sure)." + llmBit + " Worth a quick human check." };
+      if (D.top !== f)
+        return { cls: "warn", e: "🤔", chip: "Unsure", title: "Possibly mislabeled",
+          text: "Drex leans towards " + name(D.top) + " (" + pct(D.confidence) + " sure) rather than " + f + ", but not strongly enough to flag it." + llmBit };
+      return { cls: "good", e: "✅", chip: "Label OK", title: "The label looks right",
+        text: "Drex agrees it's " + aName(f) + " (" + pct(D.confidence) + " sure)." + llmBit };
+    }
+    return { cls: "info", e: "🔎", chip: cap(name(D.top)), title: D.top === "other" ? "Doesn't match any known type" : "This looks like " + aName(D.top),
+      text: "Drex is " + pct(D.confidence) + " sure." + llmBit + " Pick a “filed as” label to check a label." };
   }
 
-  // ---------- 1. try it ----------
-  var queue = [], apiOk = false;
-  function initTry(m) {
+  // ---------- 1. add files ----------
+  function initAdd() {
     $("classes").textContent = CLASSES.join(", ");
     var drop = $("drop"), picker = $("picker");
     drop.addEventListener("click", function () { picker.click(); });
     drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); picker.click(); } });
     picker.addEventListener("change", function () { add(picker.files); picker.value = ""; });
-    ["dragenter", "dragover"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
-    ["dragleave", "drop"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+    ["dragenter", "dragover"].forEach(function (x) { drop.addEventListener(x, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+    ["dragleave", "drop"].forEach(function (x) { drop.addEventListener(x, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
     drop.addEventListener("drop", function (e) { e.stopPropagation(); add(e.dataTransfer.files); });
-    // A file dropped anywhere else must not make the browser open it (that replaces the page).
-    window.addEventListener("dragover", function (e) { e.preventDefault(); });
-    window.addEventListener("drop", function (e) {
-      e.preventDefault();
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { add(e.dataTransfer.files); $("try").scrollIntoView(); }
-    });
+    window.addEventListener("dragover", function (e) { e.preventDefault(); });   // a stray drop must not open the file
+    window.addEventListener("drop", function (e) { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files.length) { add(e.dataTransfer.files); $("add").scrollIntoView(); } });
     Array.prototype.forEach.call(document.querySelectorAll("[data-sample]"), function (b) {
       b.addEventListener("click", function () {
         fetch("../data/raw/scans/" + b.dataset.sample + ".png").then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
@@ -69,295 +68,224 @@
       });
     });
     $("go").addEventListener("click", run);
-    fetch("/api/health").then(function (r) { return r.json(); }).then(function (h) { apiOk = !!(h && h.ok); render(); })
-      .catch(function () { apiOk = false; render(); });
+    fetch("/api/health").then(function (r) { return r.json(); }).then(function (h) { health = h || {}; if (h.classes) CLASSES = h.classes; $("classes").textContent = CLASSES.join(", "); renderQueue(); llmNote(); })
+      .catch(function () { health = { ok: false }; renderQueue(); });
   }
-  function status(msg, warn) {
-    var s = clear($("status"));
-    if (msg) s.appendChild(el("div", { "class": warn ? "offline" : "hint", text: msg }));
+  function llmNote() {
+    var n = clear($("llm-note"));
+    n.appendChild(el("div", { "class": "note" }, health.frontier
+      ? ["Comparing Drex with a frontier LLM: ", B(health.llm_model), "."]
+      : ["Heads-up: the LLM here is ", B(health.llm_model || "a local model"), " running on this laptop, not a frontier model. To compare with Claude, add ",
+         el("code", { text: "LLM_PROVIDER=anthropic" }), " and ", el("code", { text: "ANTHROPIC_API_KEY=…" }), " to .env and restart the app."]));
   }
+  function status(msg, warn) { var s = clear($("status")); if (msg) s.appendChild(el("div", { "class": warn ? "offline" : "hint", text: msg })); }
   function add(files, filed) {
     Array.prototype.forEach.call(files || [], function (f) {
       if (!/\.(pdf|png|jpe?g|tiff?|webp)$/i.test(f.name)) { status("Skipped " + f.name + ": use PDF, PNG, JPG, TIFF or WEBP.", true); return; }
       if (f.size > 15 * 1024 * 1024) { status("Skipped " + f.name + ": larger than 15 MB.", true); return; }
       queue.push({ file: f, filed: filed || "", url: /^image\/(png|jpe?g|webp)/.test(f.type) ? URL.createObjectURL(f) : null });
     });
-    render();
+    renderQueue();
   }
-  function render() {
+  function renderQueue() {
     var box = clear($("files"));
     queue.forEach(function (q, i) {
-      var sel = el("select", { "aria-label": "Filed as" }, [el("option", { value: "", text: "Filed as… (optional)" })]
+      var s = el("select", { "aria-label": "Filed as" }, [el("option", { value: "", text: "Filed as… (optional)" })]
         .concat(CLASSES.map(function (c) { var o = el("option", { value: c, text: "Filed as " + c }); if (c === q.filed) o.selected = true; return o; })));
-      sel.addEventListener("change", function () { q.filed = sel.value; });
+      s.addEventListener("change", function () { q.filed = s.value; });
       var x = el("button", { "class": "x", "aria-label": "Remove", text: "×" });
-      x.addEventListener("click", function () { queue.splice(i, 1); render(); });
-      box.appendChild(el("div", { "class": "file" }, [el("div", { "class": "fi" }, [q.url ? el("img", { src: q.url, alt: "" }) : "📄"]),
-        el("div", { "class": "nm", text: q.file.name }), sel, x]));
+      x.addEventListener("click", function () { queue.splice(i, 1); renderQueue(); });
+      box.appendChild(el("div", { "class": "file" }, [el("div", { "class": "fi" }, [q.url ? el("img", { src: q.url, alt: "" }) : "📄"]), el("div", { "class": "nm", text: q.file.name }), s, x]));
     });
-    $("go").disabled = !queue.length || !apiOk;
-    $("go").textContent = queue.length > 1 ? "Analyze " + queue.length + " documents" : "Analyze";
-    if (!apiOk) {
-      var s = clear($("status"));
-      s.appendChild(el("div", { "class": "offline" }, ["Live analysis needs the Cuckoo app running. In the repo folder run ",
-        el("code", { text: "python src/app.py" }), " and open ", el("code", { text: "http://localhost:8000/demo/" }), "."]));
+    $("go").disabled = !queue.length || !health.ok;
+    $("go").textContent = queue.length > 1 ? "Analyze " + queue.length + " files" : "Analyze";
+    if (!health.ok) {
+      var st = clear($("status"));
+      st.appendChild(el("div", { "class": "offline" }, ["Live analysis needs the Cuckoo app. In the repo folder run ", el("code", { text: "python src/app.py" }),
+        " and open ", el("code", { text: "http://localhost:8000/demo/" }), "."]));
     }
   }
-  function b64(file) {
-    return new Promise(function (res, rej) {
-      var r = new FileReader();
-      r.onload = function () { res(String(r.result).split(",")[1]); };
-      r.onerror = rej; r.readAsDataURL(file);
-    });
-  }
+  function b64(file) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result).split(",")[1]); }; r.onerror = rej; r.readAsDataURL(file); }); }
+
   function run() {
-    var items = queue.slice(); queue = []; render();
-    var out = $("out"); if (out.querySelector(".placeholder")) clear(out);
-    var flagged = 0, done = 0;
-    status("Analyzing " + items.length + " document" + (items.length > 1 ? "s" : "") + "…");
-    var chain = Promise.resolve();
-    items.forEach(function (q) {
-      var card = el("div", { "class": "res" }, [el("div", { "class": "top" }, [
-        el("div", { "class": "fi" }, [q.url ? el("img", { src: q.url, alt: "" }) : "📄"]),
-        el("div", { "class": "meta" }, [el("div", { text: q.file.name }), el("div", null, [el("span", { "class": "spinner" }), " reading the page with NDI, then asking both models…"])])])]);
-      out.insertBefore(card, out.firstChild);
+    var items = queue.map(function (q) { return { name: q.file.name, file: q.file, url: q.url, filed: q.filed, r: null }; });
+    queue = []; renderQueue();
+    var pg = $("progress"); if (pg.querySelector(".empty")) clear(pg);
+    var chain = Promise.resolve(), done = 0;
+    status("Analyzing " + items.length + " file" + (items.length > 1 ? "s" : "") + "…");
+    items.forEach(function (it) {
+      var row = el("div", { "class": "prow" }, [el("div", { "class": "fi" }, [it.url ? el("img", { src: it.url, alt: "" }) : "📄"]),
+        el("div", null, [el("div", { "class": "nm", text: it.name }), el("div", { "class": "st" }, [el("span", { "class": "spinner" }), " waiting…"])]), el("span")]);
+      pg.appendChild(row);
       chain = chain.then(function () {
-        return b64(q.file).then(function (data) {
-          return fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: q.file.name, data: data, filed_as: q.filed }) });
-        }).then(function (r) { return r.json(); })
-          .then(function (r) { if (showResult(card, q, r)) flagged++; })
-          .catch(function (e) { showResult(card, q, { error: String(e) }); })
-          .then(function () {
-            done++;
-            status(done < items.length ? "Analyzed " + done + " of " + items.length + "…"
-              : "Done. " + items.length + " document" + (items.length > 1 ? "s" : "") + " analyzed" +
-                (flagged ? "; " + flagged + " look" + (flagged > 1 ? "" : "s") + " mislabeled." : "."));
+        row.querySelector(".st").lastChild.textContent = " reading the page, then asking Drex and the " + llmName() + "…";
+        return b64(it.file).then(function (data) {
+          return fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: it.name, data: data, filed_as: it.filed }) });
+        }).then(function (r) { return r.json(); }).catch(function (e) { return { error: String(e) }; })
+          .then(function (r) {
+            it.r = r; results.push(it); done++;
+            var v = verdict(it), D = r.drex || {}, L = r.llm || {};
+            var st = clear(row.querySelector(".st"));
+            st.textContent = r.error || r.empty_text ? v.text : "Drex: " + name(D.top) + " · " + llmName() + ": " + name(L.top) + (it.filed ? " · filed as " + it.filed : "");
+            row.replaceChild(el("span", { "class": "chip " + v.cls, text: v.chip }), row.lastChild);
+            var idx = results.length - 1;
+            row.addEventListener("click", function () { select(idx); $("compare").scrollIntoView(); });
+            select(idx); renderResult();
+            status(done < items.length ? "Analyzed " + done + " of " + items.length + "…" : "Done. Scroll down for the comparison and the verdict.");
           });
       });
     });
   }
-  function showResult(card, q, r) {
-    var top = card.querySelector(".top"), meta = top.querySelector(".meta div:last-child");
-    while (top.nextSibling) card.removeChild(top.nextSibling);
-    if (r.error) { meta.textContent = "Couldn't analyze: " + r.error; return false; }
-    if (r.empty_text) { meta.textContent = "NDI found no readable text on page 1, so neither model can judge it."; return false; }
-    var pages = isNum(r.pages_read) ? r.pages_read + " page" + (r.pages_read > 1 ? "s" : "") : "page";
-    meta.textContent = pages + " read by NDI in " + secs(r.ndi_ms) + (r.truncated ? " (long text shortened)" : "") +
-      (q.filed ? " · filed as " + q.filed : " · no label given");
-    var D = r.drex || {}, L = r.llm || {};
-    // verdict, in plain words
-    var v, isFlag = false;
-    function nm(t) { return t === "other" ? "none of these types" : t; }
-    if (D.top === "other") {
-      v = [q.filed ? "warn" : "info", "🧐", q.filed ? "This doesn't look like " + aAn(q.filed) + ", or like any of the other types Cuckoo knows."
-                                                   : "This doesn't look like any of the six document types Cuckoo knows.",
-           "Drex is " + pct(D.confidence) + " sure it's none of: " + CLASSES.join(", ") + "." + (L.top ? " The LLM says " + nm(L.top) + "." : "")];
-    } else if (q.filed && D.top) {
-      var llmAgree = L.top ? (L.top === D.top ? " The LLM agrees." : " The LLM says " + nm(L.top) + ".") : "";
-      if (D.top !== q.filed && D.confidence >= 0.95) {
-        isFlag = true;
-        v = ["bad", "⚠️", "Probably mislabeled. It's filed as " + aAn(q.filed) + ", but it reads like " + aAn(D.top) + ".",
-             "Drex is " + pct(D.confidence) + " sure. Worth a human check." + llmAgree];
-      } else if (D.top !== q.filed) {
-        v = ["warn", "🤔", "Maybe mislabeled. Drex leans towards " + D.top + " (" + pct(D.confidence) + " sure), not " + q.filed + ".",
-             "Not confident enough to raise a flag." + llmAgree];
-      } else {
-        v = ["good", "✅", "The label looks right. Drex agrees it's " + aAn(q.filed) + " (" + pct(D.confidence) + " sure).", llmAgree.trim()];
-      }
-    } else if (D.top) {
-      v = ["info", "🔎", "Drex thinks this is " + aAn(D.top) + " (" + pct(D.confidence) + " sure).",
-           (L.top ? "The LLM thinks it's " + (L.top === "other" ? "none of these types" : aAn(L.top)) + ". " : "") + "Pick a 'filed as' label to check a label."];
+
+  // ---------- 2. compare on this file ----------
+  function select(i) { sel = i; renderCompare(); }
+  function renderCompare() {
+    var box = clear($("cmp")), it = results[sel];
+    if (!it) { box.appendChild(el("div", { "class": "empty", text: "Analyze a file in step ① and the comparison appears here." })); return; }
+    if (results.length > 1) {
+      var tabs = el("div", { "class": "tabs" });
+      results.forEach(function (x, i) { var b = el("button", { "class": "tab" + (i === sel ? " on" : ""), text: x.name }); b.addEventListener("click", function () { select(i); }); tabs.appendChild(b); });
+      box.appendChild(tabs);
+    }
+    var r = it.r || {}, D = r.drex || {}, L = r.llm || {}, f = it.filed, LN = llmName();
+    $("cmp-title").textContent = "How did each model handle “" + it.name + "”?";
+    if (r.error || r.empty_text || !D.top) { box.appendChild(el("div", { "class": "empty", text: verdict(it).text })); return; }
+
+    box.appendChild(el("div", { "class": "answers" }, [
+      el("div", { "class": "ans d" }, [el("span", { "class": "who" }, [el("span", { "class": "sw d" }), "Drex says"]), el("div", { "class": "big", text: cap(name(D.top)) }),
+        el("div", { "class": "sub", text: pct(D.confidence) + " probability, measured across all options" })]),
+      el("div", { "class": "ans l" }, [el("span", { "class": "who" }, [el("span", { "class": "sw l" }), LN + " (" + (L.model || "") + ") says"]), el("div", { "class": "big", text: L.top ? cap(name(L.top)) : "No answer" }),
+        el("div", { "class": "sub", text: L.error ? L.error : (isNum(L.confidence) ? pct(L.confidence) + " (its own guess at how sure it is)" : "") })])
+    ]));
+
+    var grid = el("div", { "class": "params" });
+    function card(c, cs, ic, title, winner, lines, take) {
+      var w = winner === "d" ? el("span", { "class": "win d", text: "Drex better" }) : winner === "l" ? el("span", { "class": "win l", text: LN + " better" }) : winner === "t" ? el("span", { "class": "win t", text: "Tie" }) : null;
+      grid.appendChild(el("div", { "class": "card pc", style: "--c:" + c + ";--cs:" + cs }, [w, el("div", { "class": "q" }, [el("div", { "class": "ic", text: ic }), el("h3", { text: title })])]
+        .concat(lines).concat([el("p", { "class": "take" }, take)])));
+    }
+    function line(who, frac, color, val) { return el("div", { "class": "line" }, [el("span", { "class": "who" }, [el("span", { "class": "sw " + who }), who === "d" ? "Drex" : "LLM"]), bar(frac, color), el("span", { "class": "v", text: val })]); }
+
+    if (f) {
+      var dOk = D.top === f, lOk = L.top === f;
+      card("var(--violet)", "var(--violet-soft)", "🏷️", "Agrees with your label (" + f + ")?", null,
+        [line("d", dOk ? 1 : 0.02, dOk ? "var(--good)" : "var(--bad)", dOk ? "Yes" : "No"), line("l", lOk ? 1 : 0.02, lOk ? "var(--good)" : "var(--bad)", L.top ? (lOk ? "Yes" : "No") : DASH)],
+        [dOk === lOk ? "Both models " + (dOk ? "agree with" : "disagree with") + " the label." : "They split: Drex says " + name(D.top) + ", the " + LN + " says " + name(L.top) + "."]);
     } else {
-      v = ["warn", "⚠️", "Drex couldn't answer: " + d(D.error), ""];
+      var same = D.top === L.top;
+      card("var(--violet)", "var(--violet-soft)", "🤝", "Do the two models agree?", null,
+        [line("d", 1, "var(--drex)", cap(name(D.top))), line("l", 1, "var(--llm)", cap(name(L.top)))],
+        [same ? "Yes: both say " + name(D.top) + "." : "No: they disagree, so this file deserves a closer look."]);
     }
-    card.appendChild(el("div", { "class": "verdict " + v[0] }, [el("span", { "class": "e", text: v[1] }), el("div", null, [v[2], v[3] ? el("small", { text: v[3] }) : null])]));
-    function side(cls, name, sw, R, color) {
-      return el("div", { "class": cls }, [el("span", { "class": "who" }, [el("span", { "class": "sw " + sw }), name]),
-        el("div", { "class": "ans", style: R.top === "other" ? "text-transform:none" : "", text: R.top === "other" ? "None of these" : (R.top || "no answer") }),
-        el("div", { "class": "conf", text: R.error ? R.error : (isNum(R.confidence) ? pct(R.confidence) + " sure" : "") }),
-        isNum(R.confidence) ? bar(R.confidence, color) : null]);
-    }
-    card.appendChild(el("div", { "class": "vs" }, [side("d", "Drex", "d", D, "var(--drex)"), side("l", "LLM (" + d(L.model) + ")", "l", L, "var(--llm)")]));
-    if (isNum(D.latency_ms) && isNum(L.latency_ms)) {
-      var mx = Math.max(D.latency_ms, L.latency_ms), faster = D.latency_ms <= L.latency_ms;
-      var ratio = (faster ? L.latency_ms / Math.max(1, D.latency_ms) : D.latency_ms / Math.max(1, L.latency_ms)).toFixed(1);
-      var lanes = [];
-      var same = Math.max(D.latency_ms, L.latency_ms) < 1.2 * Math.min(D.latency_ms, L.latency_ms);
-      var race = el("div", { "class": "race" }, [el("div", { "class": "head" }, ["⏱ Answer time for this file: ",
-        el("span", { style: same ? "color:var(--ink-2)" : "", text: same ? "about the same" : (faster ? "Drex" : "The LLM") + " was " + ratio + "× faster" })])]);
-      [["Drex", D.latency_ms, "var(--drex)"], ["LLM", L.latency_ms, "var(--llm)"]].forEach(function (x) {
-        var i = el("i", { style: "background:" + x[2] }); lanes.push([i, x[1] / mx]);
-        race.appendChild(el("div", { "class": "row" }, [el("span", { text: x[0] }), el("div", { "class": "lane" }, [i]), el("span", { "class": "t", text: secs(x[1]) })]));
-      });
-      card.appendChild(race);
-      requestAnimationFrame(function () { requestAnimationFrame(function () { lanes.forEach(function (l) { l[0].style.width = (l[1] * 100).toFixed(1) + "%"; }); }); });
-    }
-    return isFlag;
-  }
-
-  // ---------- 2. head to head ----------
-  function compare(m) {
-    var D = m.drex || {}, L = m.llm || {}, A = m.overall_accuracy || {}, S = m.speed || {}, E = m.n_planted_errors_test;
-    clear($("compare-intro")).append("Both models saw only the page, never the label. We had secretly given ", B(d(m.n_planted_errors_total) + " documents the wrong label"),
-      " to see who would catch them. Six ways to compare:");
-    var g = clear($("scores"));
-    function card(c, cs, ic, title, ask, a, b, fmt, higher, max, take) {
-      var win = isNum(a) && isNum(b) && a !== b ? ((a > b) === higher ? "Drex" : "LLM") : null;
-      var mx = max || Math.max(a || 0, b || 0) || 1;
-      g.appendChild(el("div", { "class": "card sc", style: "--c:" + c + ";--cs:" + cs }, [
-        win ? el("span", { "class": "win", text: win + " wins" }) : null,
-        el("div", { "class": "q" }, [el("div", { "class": "ic", text: ic }), el("h3", { text: title })]),
-        el("p", { "class": "ask", text: ask }),
-        el("div", { "class": "line" }, [el("span", { "class": "who" }, [el("span", { "class": "sw d" }), "Drex"]), bar(a / mx, "var(--drex)"), el("span", { "class": "n", text: fmt(a) })]),
-        el("div", { "class": "line" }, [el("span", { "class": "who" }, [el("span", { "class": "sw l" }), "LLM"]), bar(b / mx, "var(--llm)"), el("span", { "class": "n", text: fmt(b) })]),
-        el("p", { "class": "take" }, take)
-      ]));
-    }
-    var tot = m.n_docs;
-    card("var(--drex)", "var(--drex-soft)", "🎯", "Gets the document type right", "Out of " + d(tot) + " documents, how many did it identify correctly?",
-      A.drex, A.llm, pct, true, 1, [B(pct(A.drex)), " vs ", B(pct(A.llm)), ". Drex misidentifies about 1 in " + (isNum(A.drex) ? Math.round(1 / (1 - A.drex)) : DASH) + ", the LLM about 1 in " + (isNum(A.llm) ? Math.round(1 / (1 - A.llm)) : DASH) + "."]);
-    card("var(--violet)", "#ede9fe", "🕵️", "Finds the hidden mistakes", "Of the " + d(E) + " wrong labels in the test set, how many did it catch?",
-      D.errors_found, L.errors_found, function (v) { return d(v) + " / " + d(E); }, true, E, ["Both catch most of them: ", B(d(D.errors_found)), " vs ", B(d(L.errors_found)), "."]);
-    card("var(--good)", "var(--good-soft)", "🤝", "Its warnings can be trusted", "When it says “this label is wrong”, how often is it right?",
-      D.precision, L.precision, pct, true, 1, ["Drex is right ", B(pct(D.precision)), " of the time. The LLM only ", B(pct(L.precision)), ": most of its warnings are false."]);
-    card("var(--bad)", "var(--bad-soft)", "🗑️", "Wasted checks", "How many correct documents did it wrongly flag?",
-      D.false_alarms, L.false_alarms, d, false, null, ["The LLM sends a reviewer to check ", B(d(L.false_alarms)), " fine documents. Drex: ", B(d(D.false_alarms)), "."]);
-    card("var(--teal)", "#ccfbf1", "📋", "Best use of 20 minutes", "If a person checks only the top 20 warnings, how many real mistakes do they find?",
-      (D.budget_curve || {})["20"], (L.budget_curve || {})["20"], n1, true, E, [B(n1((D.budget_curve || {})["20"])), " real mistakes with Drex, about ", B(n1((L.budget_curve || {})["20"])), " with the LLM."]);
-    card("var(--llm)", "var(--llm-soft)", "⚡", "Speed per document", "Average time to answer one document.",
-      S.drex_mean_ms, S.llm_mean_ms, secs, false, null, ["Drex answers in ", B(secs(S.drex_mean_ms)), " on average, the LLM in ", B(secs(S.llm_mean_ms)), "."]);
-    speed(m);
-  }
-
-  function speed(m) {
-    var S = m.speed || {}, dl = (S.drex_ms || []).slice().sort(function (a, b) { return a - b; }), ll = (S.llm_ms || []).slice().sort(function (a, b) { return a - b; });
-    var box = clear($("strip"));
-    if (dl.length && ll.length) {
-      var W = 640, H = 170, P = { l: 58, r: 16, t: 14, b: 36 };
-      var lo = 100, hi = Math.max(dl[dl.length - 1], ll[ll.length - 1]) * 1.1;
-      function X(v) { return P.l + (Math.log(Math.max(v, lo)) - Math.log(lo)) / (Math.log(hi) - Math.log(lo)) * (W - P.l - P.r); }
-      var s = svg("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Answer time for every document, Drex vs LLM" });
-      [100, 200, 500, 1000, 2000, 5000, 10000].filter(function (t) { return t <= hi; }).forEach(function (t) {
-        s.appendChild(svg("line", { x1: X(t), x2: X(t), y1: P.t, y2: H - P.b, stroke: "var(--line)" }));
-        var tx = svg("text", { x: X(t), y: H - P.b + 16, "text-anchor": "middle", "font-size": 11, fill: "var(--ink-3)" }); tx.textContent = secs(t); s.appendChild(tx);
-      });
-      var lab = svg("text", { x: (P.l + W - P.r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 11.5, fill: "var(--ink-2)" }); lab.textContent = "time to answer one document (log scale)"; s.appendChild(lab);
-      [[dl, 52, "var(--drex)", "Drex"], [ll, 112, "var(--llm)", "LLM"]].forEach(function (row) {
-        var t = svg("text", { x: 4, y: row[1] + 4, "font-size": 12.5, "font-weight": 700, fill: row[2] }); t.textContent = row[3]; s.appendChild(t);
-        row[0].forEach(function (v, i) {
-          s.appendChild(svg("circle", { cx: X(v).toFixed(1), cy: (row[1] + ((i * 7919) % 23) - 11).toFixed(1), r: 3, fill: row[2], opacity: .55 }));
-        });
-        var med = row[0][Math.floor(row[0].length / 2)];
-        s.appendChild(svg("line", { x1: X(med), x2: X(med), y1: row[1] - 18, y2: row[1] + 18, stroke: "var(--ink)", "stroke-width": 2 }));
-      });
-      box.appendChild(s);
-      box.appendChild(el("p", { style: "font-size:12.5px;color:var(--ink-3);margin:6px 0 0", text: "Black tick = the typical (median) document." }));
-    }
-    function q(arr, p) { return arr.length ? arr[Math.min(arr.length - 1, Math.round(p * (arr.length - 1)))] : null; }
-    var f = clear($("speedfacts"));
-    function fact(e, bg, kids) { f.appendChild(el("li", null, [el("span", { "class": "e", style: "background:" + bg, text: e }), el("div", null, kids)])); }
-    fact("🏁", "var(--good-soft)", ["Drex answered faster on ", B(d(S.drex_faster_count) + " of " + d(S.n)), " documents."]);
-    fact("🐢", "var(--llm-soft)", ["The LLM's slowest 10% took over ", B(secs(q(ll, 0.9))), " each. Drex's slowest 10%: over ", B(secs(q(dl, 0.9))), "."]);
-    fact("⏳", "var(--drex-soft)", ["For 1,000 documents, one at a time: about ", B(Math.round(S.drex_mean_ms * 1000 / 60000) + " min"), " with Drex vs ", B(Math.round(S.llm_mean_ms * 1000 / 60000) + " min"), " with the LLM."]);
-    var sp = S.short_pages || {}, lp = S.long_pages || {};
-    fact("📈", "#ede9fe", ["Longer pages slow the LLM down: its typical time goes from ", B(secs(sp.llm_median_ms)), " on shorter pages to ",
-      B(secs(lp.llm_median_ms)), " on longer ones. Drex barely changes (", B(secs(sp.drex_median_ms)), " → ", B(secs(lp.drex_median_ms)), ")."]);
-    $("fair").textContent = "Fairness note: " + (S.note || "") + " Timings exclude NDI reading time, which is the same for both.";
-  }
-
-  // ---------- 3. categories ----------
-  function categories(m) {
-    var pc = m.per_class || {}, g = clear($("cats"));
-    var mx = 0;
-    Object.keys(pc).forEach(function (c) { mx = Math.max(mx, pc[c].n_true, pc[c].drex_pred, pc[c].llm_pred); });
-    CLASSES.forEach(function (c) {
-      var x = pc[c]; if (!x) return;
-      function line(name, v, color) { return el("div", { "class": "line" }, [el("span", { text: name }), bar(v / mx, color), el("span", { "class": "n", text: d(v) })]); }
-      g.appendChild(el("div", { "class": "card cat" }, [
-        el("h4", null, [el("span", { text: ICON[c] || "📄" }), c + "s"]),
-        line("Really", x.n_true, "#94a3b8"), line("Drex said", x.drex_pred, "var(--drex)"), line("LLM said", x.llm_pred, "var(--llm)"),
-        el("div", { "class": "right" }, ["Got right: ", B("Drex " + x.drex_correct, null), "/" + x.n_true + " · ", B("LLM " + x.llm_correct), "/" + x.n_true])
-      ]));
-      var bs = g.lastChild.querySelectorAll(".right b"); bs[0].className = "d"; bs[1].className = "l";
+    var probs = D.probs || {}, opts = el("div", { "class": "opts" });
+    Object.keys(probs).sort(function (a, b) { return probs[b] - probs[a]; }).slice(0, 4).forEach(function (c) {
+      opts.appendChild(el("span", { text: cap(name(c)) })); opts.appendChild(bar(probs[c], "var(--drex)")); opts.appendChild(el("span", { style: "text-align:right", text: pct(probs[c]) }));
     });
-    function bias(key) {
-      var best = null;
-      CLASSES.forEach(function (c) { var x = pc[c]; if (x && (!best || x[key] - x.n_true > pc[best][key] - pc[best].n_true)) best = c; });
-      return best;
+    card("var(--drex)", "var(--drex-soft)", "🧮", "Shows its reasoning across options", "d", [opts],
+      ["Drex scored all ", B(String(Object.keys(probs).length) + " options"), " at once (top 4 shown). The " + LN + " only names one answer, so you can't see what else it considered."]);
+    card("var(--teal)", "var(--teal-soft)", "🎯", "How sure is it?", null,
+      [line("d", D.confidence, "var(--drex)", pct(D.confidence)), line("l", L.confidence, "var(--llm)", pct(L.confidence))],
+      isNum(L.confidence) && L.confidence >= 0.99 && D.confidence < 0.99
+        ? ["The " + LN + " says it's certain. Drex's number is a real probability, so ", B(pct(D.confidence)), " means there is some doubt worth knowing about."]
+        : ["Drex's ", B(pct(D.confidence)), " is a measured probability; the " + LN + "'s ", B(pct(L.confidence)), " is its own guess."]);
+    var dT = D.latency_ms, lT = L.latency_ms, fastD = isNum(dT) && isNum(lT) && dT < lT, mx = Math.max(dT || 0, lT || 0) || 1;
+    var close = isNum(dT) && isNum(lT) && Math.max(dT, lT) < 1.2 * Math.min(dT, lT);
+    card("var(--llm)", "var(--llm-soft)", "⏱️", "Time to answer this file", close ? "t" : (fastD ? "d" : "l"),
+      [line("d", dT / mx, "var(--drex)", t(dT)), line("l", lT / mx, "var(--llm)", t(lT))],
+      close ? ["About the same on this file."] : [B(fastD ? "Drex" : "The " + LN), " answered " + (fastD ? (lT / dT) : (dT / lT)).toFixed(1) + "× faster. The timeline below shows where the time went."]);
+    var dIn = D.input_tokens, lIn = L.input_tokens, lOut = L.output_tokens;
+    card("var(--warn)", "var(--warn-soft)", "⚙️", "Work done to answer", isNum(lOut) && lOut > 0 ? "d" : null,
+      [el("div", { "class": "line" }, [el("span", { "class": "who" }, [el("span", { "class": "sw d" }), "Drex"]), el("span", { style: "font-size:13px", text: "read " + (dIn || DASH) + " · wrote 0" }), el("span", { "class": "v", text: "0 tokens" })]),
+       el("div", { "class": "line" }, [el("span", { "class": "who" }, [el("span", { "class": "sw l" }), "LLM"]), el("span", { style: "font-size:13px", text: "read " + (lIn || DASH) + " · wrote " + (lOut || DASH) }), el("span", { "class": "v", text: (lOut || DASH) + " tokens" })])],
+      ["Both read the page (counted in tokens, roughly word pieces). Drex answers with numbers; the " + LN + " has to ", B("write " + (lOut || DASH) + " tokens"), " of text one by one, which takes time."]);
+    var att = L.attempts || 1;
+    card("var(--good)", "var(--good-soft)", "🔁", "Answered first time?", att > 1 ? "d" : "t",
+      [line("d", 1, "var(--good)", "1 try"), line("l", 1, att > 1 ? "var(--bad)" : "var(--good)", att + (att > 1 ? " tries" : " try"))],
+      att > 1 ? ["The " + LN + "'s first reply couldn't be read, so it had to be asked again."] : ["Both gave a usable answer on the first try."]);
+    box.appendChild(grid);
+
+    var tl = el("div", { "class": "card timeline" }, [el("h3", { text: "Where the time went, step by step" }),
+      el("p", { style: "margin:0;color:var(--ink-2);font-size:14px" }, ["First, both waited ", B(t(r.ndi_ms)), " for NDI to read the page (" + (r.pages_read || 1) + " page" + ((r.pages_read || 1) > 1 ? "s" : "") + "). Then each model worked on the text, at the same time:"])]);
+    var P = L.phases || {}, segsL;
+    var net = isNum(D.server_ms) ? Math.max(0, dT - D.server_ms) : null;
+    var segsD = isNum(D.server_ms) ? [["Internet round trip", net, "#93c5fd"], ["Thinking (one pass)", D.server_ms, "#2563eb"]] : [["Answering", dT, "#2563eb"]];
+    if (isNum(P.wait_first_word_ms)) segsL = [["Waiting for first word", P.wait_first_word_ms, "#fdba74"], ["Writing the answer", P.write_ms, "#f97316"]];
+    else segsL = [["Loading the model", P.load_ms, "#fde68a"], ["Reading the text", P.read_ms, "#fdba74"], ["Writing the answer", P.write_ms, "#f97316"], ["Other", P.other_ms, "#fed7aa"]];
+    var scale = Math.max(dT || 0, lT || 0) || 1;
+    function row(label, segs, total) {
+      var tr = el("div", { "class": "track" });
+      segs.forEach(function (s) { if (isNum(s[1]) && s[1] > 0) tr.appendChild(el("div", { "class": "seg", title: s[0] + ": " + t(s[1]), style: "width:" + (s[1] / scale * 100).toFixed(2) + "%;background:" + s[2] + ";color:" + (s[2] === "#2563eb" || s[2] === "#f97316" ? "#fff" : "#7c2d12") }, [s[1] / scale > 0.14 ? t(s[1]) : ""])); });
+      return el("div", { "class": "tl-row" }, [el("span", { "class": "lab", text: label }), tr, el("span", { "class": "tot", text: t(total) })]);
     }
-    function weakest(key) {
-      var w = null;
-      CLASSES.forEach(function (c) { var x = pc[c]; if (x && (!w || x[key] < pc[w][key])) w = c; });
-      return w;
+    tl.appendChild(row("Drex", segsD, dT));
+    tl.appendChild(row(LN, segsL, lT));
+    var lg = el("div", { "class": "legend" });
+    segsD.concat(segsL).forEach(function (s) { if (isNum(s[1]) && s[1] > 0) lg.appendChild(el("span", null, [el("i", { style: "background:" + s[2] }), s[0] + " " + t(s[1])])); });
+    tl.appendChild(lg);
+
+    var ev = el("ul", { "class": "evidence" });
+    function fact(e, bg, kids) { ev.appendChild(el("li", null, [el("span", { "class": "e", style: "background:" + bg, text: e }), el("div", null, kids)])); }
+    if (isNum(P.load_ms) && P.load_ms > 50) fact("🧊", "#fef3c7", ["Before it could start, the " + LN + " spent ", B(t(P.load_ms)), " loading itself into memory. Drex had nothing to load."]);
+    if (isNum(P.write_ms) && P.write_ms > 0) fact("✍️", "var(--llm-soft)", ["The " + LN + " wrote its answer piece by piece: ", B((lOut || "?") + " tokens in " + t(P.write_ms)), ". Drex doesn't write: it scored every option in one pass" + (isNum(D.server_ms) ? " in " : "."), isNum(D.server_ms) ? B(t(D.server_ms)) : null, isNum(D.server_ms) ? "." : null]);
+    if (isNum(P.read_ms) && P.read_ms > 0) fact("📖", "#ffedd5", ["Reading the text took the " + LN + " ", B(t(P.read_ms)), " for " + (lIn || "?") + " tokens."]);
+    if (isNum(P.wait_first_word_ms)) fact("⌛", "#ffedd5", ["The " + LN + " took ", B(t(P.wait_first_word_ms)), " before its first word arrived."]);
+    if (isNum(net) && net > 0) fact("🌐", "var(--drex-soft)", ["Most of Drex's time was the trip over the internet (", B(t(net)), "); the model itself needed ", B(t(D.server_ms)), "."]);
+    if (isNum(dT) && isNum(lT)) {
+      if (close) fact("🤝", "var(--soft)", ["On this file both finished in about the same time."]);
+      else if (fastD) fact("🏁", "var(--good-soft)", ["Overall, ", B("Drex finished " + t(lT - dT) + " sooner"), " (" + t(dT) + " vs " + t(lT) + ")."]);
+      else fact("🏁", "var(--soft)", ["On this file the " + LN + " finished first (" + t(lT) + " vs " + t(dT) + ")" + (isNum(net) && net > lT ? ", mainly because Drex's answer had to travel over the internet while the " + LN + " runs on this laptop." : ".")]);
     }
-    var co = clear($("callouts")), bl = bias("llm_pred"), bd = bias("drex_pred"), wl = weakest("llm_correct"), wd = weakest("drex_correct");
-    if (bl) co.appendChild(el("div", { "class": "callout l" }, ["🟠 ", B("The LLM over-uses “" + bl + "”: "), "it called " + pc[bl].llm_pred + " documents " + bl + "s when there were only " + pc[bl].n_true + ". It struggled most with " + wl + "s (" + pc[wl].llm_correct + " of " + pc[wl].n_true + " right)."]));
-    if (bd) co.appendChild(el("div", { "class": "callout d" }, ["🔵 ", B("Drex is more even: "), "its biggest lean is towards " + bd + " (" + pc[bd].drex_pred + " vs " + pc[bd].n_true + "), and its hardest type was " + wd + "s (" + pc[wd].drex_correct + " of " + pc[wd].n_true + " right)."]));
+    tl.appendChild(ev);
+    box.appendChild(tl);
   }
 
-  // ---------- 4. verdict ----------
-  function verdict(m) {
-    var D = m.drex || {}, L = m.llm || {}, A = m.overall_accuracy || {}, S = m.speed || {}, E = m.n_planted_errors_test;
-    var v = clear($("verdicts"));
-    function vc(e, bg, title, kids) { v.appendChild(el("div", { "class": "card vcard" }, [el("div", { "class": "e", style: "background:" + bg, text: e }), el("div", null, [el("h3", { text: title }), el("p", null, kids)])])); }
-    vc("🏆", "var(--good-soft)", "Drex is the better label checker", ["It knows what documents are more often (", B(pct(A.drex)), " vs ", B(pct(A.llm)), ") and its warnings are trustworthy (", B(pct(D.precision)), " right vs ", B(pct(L.precision)), ")."]);
-    vc("⚡", "var(--drex-soft)", "And it's about twice as fast", ["Typical answer in ", B(secs(S.drex_median_ms)), " vs ", B(secs(S.llm_median_ms)), ". Faster on ", B(d(S.drex_faster_count) + " of " + d(S.n)), " documents."]);
-    vc("🧹", "var(--llm-soft)", "The LLM wastes reviewers' time", ["To find ", B(d(L.errors_found) + " mistakes"), " it raises ", B(d(L.n_flagged) + " warnings"), ": ", B(d(L.false_alarms) + " are false"), ". Drex needs ", B(d(D.n_flagged)), " warnings to find ", B(d(D.errors_found)), "."]);
-    vc("⚖️", "#ede9fe", "Honest limits", ["Drex still misreads some pages (", B(d(D.false_alarms) + " false alarms"), "). The mistakes were planted on purpose, the test had ", B(d(m.n_test) + " documents"), ", and the LLM is a small local model, not a frontier one."]);
-    var flags = (m.top_flags || []).slice(0, 10), hits = flags.filter(function (f) { return f && f.flipped; }).length;
-    $("queue-intro").textContent = "Drex's top " + flags.length + " warnings. " + hits + " of " + flags.length + " really were mislabeled. Click one to see the page.";
-    var qb = clear($("queue"));
-    flags.forEach(function (f, i) {
-      var row = el("div", { "class": "q-row", tabindex: "0", role: "button" }, [
-        el("span", { style: "color:var(--ink-3);font-weight:700", text: String(i + 1) }),
-        el("div", { style: "display:flex;gap:6px;align-items:center;flex-wrap:wrap" }, [
-          el("span", { "class": "chip old", text: d(f.given_label) }), el("span", { style: "color:var(--ink-3)", text: "→" }),
-          el("span", { "class": "chip new", text: d(f.drex_top) }),
-          el("span", { style: "color:var(--ink-3);font-size:13px", text: "Drex " + pct((f.drex_probs || {})[f.drex_top]) + " sure" })]),
-        f.flipped ? el("span", { "class": "badge ok", text: "✓ Really mislabeled" }) : el("span", { "class": "badge no", text: "✗ False alarm" })
-      ]);
-      function open() {
-        var inn = clear($("dlg-in"));
-        inn.appendChild(el("p", { style: "margin:0 0 10px;font-weight:600" }, ["Filed as ", B(d(f.given_label)), ". Drex says ", B(d(f.drex_top), "color:var(--drex)"), ". " +
-          (f.flipped ? "It really is " + aAn(f.true_label) + ": the label was wrong." : "It really is " + aAn(f.true_label) + ": the label was right, Drex misread it.")]));
-        var img = el("img", { src: "../data/raw/scans/" + encodeURIComponent(f.doc_id) + ".png", alt: "Scanned page" });
-        img.addEventListener("error", function () { img.replaceWith(el("p", { text: "Scan not available here (data/raw is local only)." })); });
-        inn.appendChild(img);
-        var close = el("button", { "class": "btn ghost", style: "margin-top:12px;width:100%", text: "Close" });
-        close.addEventListener("click", function () { $("dlg").close(); });
-        inn.appendChild(close);
-        if ($("dlg").showModal) $("dlg").showModal();
-      }
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", function (e) { if (e.key === "Enter") open(); });
-      qb.appendChild(row);
+  // ---------- 3. result ----------
+  function count(list, key) { var m = {}; list.forEach(function (x) { var k = key(x); if (k) m[k] = (m[k] || 0) + 1; }); return m; }
+  function describe(m) {
+    var ks = Object.keys(m).sort(function (a, b) { return m[b] - m[a]; });
+    return ks.length ? ks.map(function (k) { return m[k] + " " + (k === "other" ? "“none of these”" : k + (m[k] > 1 ? "s" : "")); }).join(", ") : DASH;
+  }
+  function renderResult() {
+    var box = clear($("res")), ok = results.filter(function (x) { return x.r && x.r.drex && x.r.drex.top; });
+    if (!results.length) { box.appendChild(el("div", { "class": "empty", text: "Your verdict appears here after the analysis." })); return; }
+    var LN = llmName();
+    if (results.length === 1) {
+      var v = verdict(results[0]);
+      box.appendChild(el("div", { "class": "verdict " + v.cls }, [el("span", { "class": "e", text: v.e }), el("div", null, [el("h3", { text: v.title }), el("p", { text: v.text })])]));
+    } else {
+      var flagged = results.filter(function (x) { return verdict(x).flag; });
+      var agree = ok.filter(function (x) { return x.r.llm && x.r.llm.top === x.r.drex.top; }).length;
+      var dSum = ok.reduce(function (s, x) { return s + (x.r.drex.latency_ms || 0); }, 0), lSum = ok.reduce(function (s, x) { return s + ((x.r.llm || {}).latency_ms || 0); }, 0);
+      box.appendChild(el("div", { "class": "verdict " + (flagged.length ? "bad" : "good") }, [el("span", { "class": "e", text: flagged.length ? "⚠️" : "✅" }), el("div", null, [
+        el("h3", { text: flagged.length ? flagged.length + " of your " + results.length + " files look mislabeled" : "No mislabeled files found in your " + results.length + " files" }),
+        el("p", { text: (flagged.length ? "Check: " + flagged.map(function (x) { return x.name + " (filed as " + x.filed + ", looks like " + aName(x.r.drex.top) + ")"; }).join("; ") + ". " : "") +
+          "Drex and the " + LN + " agree on " + agree + " of " + ok.length + " files. Total answer time: Drex " + t(dSum) + ", " + LN + " " + t(lSum) + "." })])]));
+    }
+    var tb = el("tbody");
+    results.forEach(function (x, i) {
+      var r = x.r || {}, v = verdict(x);
+      var tr = el("tr", { style: "cursor:pointer" }, [el("td", { "class": "nm", text: x.name }), el("td", { "class": "hide-sm", text: x.filed ? cap(x.filed) : DASH }),
+        el("td", null, [el("span", { "class": "lbl d", text: r.drex && r.drex.top ? cap(name(r.drex.top)) : DASH }), r.drex && isNum(r.drex.confidence) ? el("span", { style: "color:var(--ink-3);font-size:12.5px", text: " " + pct(r.drex.confidence) }) : null]),
+        el("td", null, [el("span", { "class": "lbl l", text: r.llm && r.llm.top ? cap(name(r.llm.top)) : DASH })]),
+        el("td", null, [el("span", { "class": "chip " + v.cls, text: v.chip })])]);
+      tr.addEventListener("click", function () { select(i); $("compare").scrollIntoView(); });
+      tb.appendChild(tr);
     });
-    $("foot").textContent = "Data: " + d(m.n_docs) + " real scans from RVL-CDIP; " + d(m.n_planted_errors_total) + " labels deliberately flipped. " +
-      "Mistake-finding numbers use the " + d(m.n_test) + "-document test split (threshold set on a separate " + d(m.n_dev) + "-document split). " +
-      "Every figure on this page is read from results/metrics.json.";
-  }
-
-  function navSpy() {
-    if (!("IntersectionObserver" in window)) return;
-    var links = {};
-    Array.prototype.forEach.call(document.querySelectorAll("nav a"), function (a) { links[a.getAttribute("href").slice(1)] = a; });
-    var io = new IntersectionObserver(function (es) {
-      es.forEach(function (e) { if (e.isIntersecting) { for (var k in links) links[k].classList.remove("on"); if (links[e.target.id]) links[e.target.id].classList.add("on"); } });
-    }, { rootMargin: "-40% 0px -55% 0px" });
-    for (var id in links) { var s = $(id); if (s) io.observe(s); }
-  }
-
-  function load() {
-    fetch("../results/metrics.json").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(function (m) {
-        CLASSES = m.classes || ["invoice", "letter", "form", "resume", "report", "memo"];
-        [pills, initTry, compare, categories, verdict].forEach(function (f) { try { f(m); } catch (e) { console.error(f.name, e); } });
-        navSpy();
-      })
-      .catch(function (e) {
-        clear($("pills")).appendChild(el("div", { "class": "pill", text: "Could not load results/metrics.json (" + e.message + "). Run python src/app.py and open http://localhost:8000/demo/." }));
+    box.appendChild(el("div", { "class": "card", style: "padding:10px 14px;overflow-x:auto" }, [el("table", { "class": "rtable" }, [
+      el("thead", null, [el("tr", null, [el("th", { text: "File" }), el("th", { "class": "hide-sm", text: "Filed as" }), el("th", { text: "Drex says" }), el("th", { text: LN + " says" }), el("th", { text: "Verdict" })])]), tb])]));
+    if (ok.length > 1) {
+      var dC = count(ok, function (x) { return x.r.drex.top; }), lC = count(ok, function (x) { return (x.r.llm || {}).top; }), fC = count(ok, function (x) { return x.filed; });
+      var cats = Object.keys(Object.assign({}, dC, lC, fC)), mx = 1;
+      cats.forEach(function (c) { mx = Math.max(mx, dC[c] || 0, lC[c] || 0, fC[c] || 0); });
+      var mix = el("div", { "class": "mix" });
+      cats.forEach(function (c) {
+        function r(lab, v, col) { return el("div", { "class": "r" }, [el("span", { text: lab }), bar((v || 0) / mx, col), B(String(v || 0))]); }
+        mix.appendChild(el("div", { "class": "m" }, [el("h4", { text: cap(name(c)) }), Object.keys(fC).length ? r("Filed", fC[c], "#94a3b8") : null, r("Drex", dC[c], "var(--drex)"), r("LLM", lC[c], "var(--llm)")]));
       });
+      box.appendChild(el("div", { "class": "card", style: "margin-top:14px" }, [el("h3", { style: "margin:0 0 4px;font-size:18px", text: "What's in your dataset, according to each model" }),
+        el("p", { style: "margin:0;color:var(--ink-2);font-size:14.5px" }, [B("Drex: ", "color:var(--drex)"), describe(dC) + ". ", B(LN + ": ", "color:#c2410c"), describe(lC) + "."]), mix]));
+    }
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load); else load();
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initAdd); else initAdd();
 })();

@@ -78,7 +78,8 @@ async def analyze(name: str, raw: bytes, filed_as: str) -> dict:
         try:
             r = await drex_client.classify(text, LIVE_CLASSES, DREX_DESCRIPTIONS)
             top = max(r["probs"], key=r["probs"].get)
-            return {"top": top, "confidence": r["probs"][top], "probs": r["probs"], "latency_ms": r["latency_ms"]}
+            return {"top": top, "confidence": r["probs"][top], "probs": r["probs"], "latency_ms": r["latency_ms"],
+                    "server_ms": r.get("server_ms"), "input_tokens": r.get("input_tokens"), "model": r.get("model")}
         except Exception as e:
             return {"error": f"{type(e).__name__}: {str(e)[:160]}"}
 
@@ -86,7 +87,9 @@ async def analyze(name: str, raw: bytes, filed_as: str) -> dict:
         try:
             r = await llm_client.classify(text, LIVE_CLASSES)
             return {"top": r["label"], "confidence": None if r["confidence"] is None else r["confidence"] / 100,
-                    "latency_ms": r["latency_ms"], "model": llm_client.MODEL}
+                    "latency_ms": r["latency_ms"], "model": r.get("model", llm_client.MODEL),
+                    "provider": llm_client.PROVIDER, "phases": r.get("phases"), "attempts": r.get("attempts"),
+                    "input_tokens": r.get("input_tokens"), "output_tokens": r.get("output_tokens")}
         except Exception as e:
             return {"error": f"{type(e).__name__}: {str(e)[:160]}", "model": llm_client.MODEL}
 
@@ -114,7 +117,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
         if self.path == "/api/health":
-            return self._json(200, {"ok": True, "classes": config.CLASSES, "llm_model": llm_client.MODEL})
+            return self._json(200, {"ok": True, "classes": config.CLASSES, "llm_model": llm_client.MODEL,
+                                    "llm_provider": llm_client.PROVIDER, "frontier": llm_client.PROVIDER == "anthropic"})
         # Never serve hidden files (.env, .git, ...), however the path is spelled.
         fs = Path(self.translate_path(self.path)).resolve()
         try:

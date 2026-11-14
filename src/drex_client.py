@@ -108,6 +108,8 @@ async def classify(text: str, classes: list[str], descriptions: dict | None = No
         "probs": probs,
         "latency_ms": latency_ms,
         "input_tokens": int(data["usage"]["input_tokens"]),
+        "server_ms": data.get("evaluation_time_ms"),  # Drex's own compute time for this request
+        "model": data.get("model"),
     }
 
 
