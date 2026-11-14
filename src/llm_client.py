@@ -83,7 +83,10 @@ async def classify(text: str, classes: list[str]) -> dict:
     label = conf = None
     for _ in range(2):  # one try + one retry on parse failure
         data = await _chat(body)
-        in_tok += int(data.get("prompt_eval_count", 0))
+        p_tok = int(data.get("prompt_eval_count", 0))
+        if p_tok >= NUM_CTX - 64:
+            print(f"[llm] WARNING prompt hit context limit ({p_tok}/{NUM_CTX}); Ollama may have cut the text")
+        in_tok += p_tok
         out_tok += int(data.get("eval_count", 0))
         raw = data.get("message", {}).get("content", "")
         try:

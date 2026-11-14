@@ -48,20 +48,39 @@ async def main(model: str, limit: int | None, concurrency: int) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     skip = done_ids(out)
     files = sorted(Path(config.PARSED_DIR).glob("*.json"))
-    todo = []
+    todo, unreadable = [], []
     for f in files:
-        doc = json.loads(f.read_text())
+        try:  # B may still be writing a file; skip it now, the next run picks it up
+            doc = json.loads(f.read_text())
+            doc["doc_id"], doc["text"]
+        except (json.JSONDecodeError, KeyError, UnicodeDecodeError, TypeError):
+            unreadable.append(f.name)
+            continue
         if doc["doc_id"] not in skip:
             todo.append(doc)
     if limit is not None:
         todo = todo[:limit]
     print(f"{len(files)} parsed, {len(skip)} already done, {len(todo)} to run ({model})")
+    if unreadable:
+        print(f"  WARNING skipped {len(unreadable)} unreadable/partial files: {unreadable[:10]}")
+    empty = [d["doc_id"] for d in todo if not str(d["text"]).strip()]
+    if empty:
+        print(f"  WARNING {len(empty)} docs have empty text (models will still guess; tell B): "
+              f"{empty[:10]}")
 
     sem = asyncio.Semaphore(concurrency)
     lock = asyncio.Lock()
     latencies: list[int] = []
     failures: list[str] = []
     count = 0
+
+    finished = 0
+
+    def progress() -> None:
+        nonlocal finished
+        finished += 1
+        if finished % 10 == 0 or finished == len(todo):
+            print(f"  {finished}/{len(todo)}")
 
     async def one(doc: dict) -> None:
         nonlocal count
@@ -71,6 +90,7 @@ async def main(model: str, limit: int | None, concurrency: int) -> None:
             except Exception as e:  # keep going; failed docs are retried on the next run
                 failures.append(doc["doc_id"])
                 print(f"  FAIL {doc['doc_id']}: {type(e).__name__}: {str(e)[:150]}")
+                progress()
                 return
         async with lock:
             with out.open("a") as fh:
@@ -79,8 +99,7 @@ async def main(model: str, limit: int | None, concurrency: int) -> None:
             if model == "llm" and r["label"] is None:
                 failures.append(doc["doc_id"])
             count += 1
-            if count % 10 == 0 or count == len(todo):
-                print(f"  {count}/{len(todo)}")
+            progress()
 
     await asyncio.gather(*(one(d) for d in todo))
     med = statistics.median(latencies) if latencies else None
