@@ -129,7 +129,24 @@ async def _go_no_go(n: int) -> None:
     print(f"\n{right}/{len(files)} correct -> {'GO' if right >= 0.8 * len(files) else 'NO-GO'}")
 
 
-if __name__ == "__main__":
-    import sys
+async def _key_check() -> None:
+    """GET /v1/models: confirms the key works. Not billed, not rate limited (per docs)."""
+    r = await _get_client().get("/v1/models")
+    print(f"HTTP {r.status_code}")
+    if r.status_code != 200:
+        print(r.text[:300])
+        return
+    for m in r.json().get("models", []):
+        alias = f" -> {m['alias_for']}" if m.get("alias_for") else ""
+        print(f"  {m.get('name')}{alias}")
+    print("Drex key OK")
 
-    asyncio.run(_go_no_go(int(sys.argv[1]) if len(sys.argv) > 1 else 20))
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Drex key check or go/no-go run")
+    ap.add_argument("n", nargs="?", type=int, default=20, help="docs for go/no-go (default 20)")
+    ap.add_argument("--check", action="store_true", help="only verify the API key via /v1/models")
+    a = ap.parse_args()
+    asyncio.run(_key_check() if a.check else _go_no_go(a.n))
